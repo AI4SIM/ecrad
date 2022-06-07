@@ -48,6 +48,8 @@ program ecrad_driver
   use ecrad_driver_config,      only : driver_config_type
   use ecrad_driver_read_input,  only : read_input
   use easy_netcdf
+  use ecrad_binding
+  use output_type_factory
 
   implicit none
 
@@ -91,6 +93,15 @@ program ecrad_driver
 
   ! Start/stop time in seconds
   real(kind=jprd) :: tstart, tstop
+
+  ! AI4Sim binding
+  type(factory_type)                     :: factory
+  type(ecrad_output_type)                :: solver_output
+  type(inferer_output_type)              :: solver_input
+  type(ecrad_binding_type)               :: solver_binding
+  type(ecrad_output_type), allocatable   :: solver_data(:)
+  type(inferer_output_type), allocatable :: solver_buffer(:)
+  integer                                :: block_size = 1
  
 
   ! --------------------------------------------------------
@@ -138,6 +149,10 @@ program ecrad_driver
   ! Setup the radiation scheme: load the coefficients for gas and
   ! cloud optics, currently from RRTMG
   call setup_radiation(config)
+
+  ! Initialize AI4Sim binding
+  call solver_binding % initialize()
+
 
   ! --------------------------------------------------------
   ! Section 3: Read input data file
@@ -197,6 +212,15 @@ program ecrad_driver
          &                lon=spread(0.0_jprb,1,ncol), &
          &                iverbose=driver_config%iverbose)
   end if
+
+  ! Use parameters from the file to finalize the initialization of AI4Sim
+  call factory % create_ecrad_output_type(nlev, nemissbands, nalbedobands, ngas, solver_output, solver_binding % mpi_err)
+  call factory % create_inferer_output_type(solver_input, solver_binding % mpi_err)
+
+  allocate(solver_buffer(block_size))
+  allocate(solver_data(block_size))
+
+  call solver_binding % connect(solver_buffer, block_size, factory)
 
   ! --------------------------------------------------------
   ! Section 4: Call radiation scheme
@@ -274,6 +298,42 @@ program ecrad_driver
       ! Call the ECRAD radiation scheme
       call radiation(ncol, nlev, driver_config%istartcol, driver_config%iendcol, &
            &  config, single_level, thermodynamics, gas, cloud, aerosol, flux)
+
+      do i = 1, block_size
+        solver_output % skin_temperature = single_level % skin_temperature
+        solver_output % cos_solar_zenith_angle = single_level % cos_sza
+        solver_output % sw_albedo = (/single_level % sw_albedo/)
+        solver_output % sw_albedo_direct = (/single_level % sw_albedo_direct/)
+        solver_output % lw_emissivity = (/single_level % lw_emissivity/)
+        solver_output % solar_irradiance = single_level % solar_irradiance
+        solver_output % q = (/gas % mixing_ratio(1,:,1)/)
+        solver_output % o3_mmr = (/gas % mixing_ratio(1,:,3)/)
+        solver_output % co2_vmr = (/gas % mixing_ratio(1,:,2)/)
+        solver_output % n2o_vmr = (/gas % mixing_ratio(1,:,4)/)
+        solver_output % ch4_vmr = (/gas % mixing_ratio(1,:,6)/)
+        solver_output % o2_vmr = (/gas % mixing_ratio(1,:,7)/)
+        solver_output % cfc11_vmr = (/gas % mixing_ratio(1,:,8)/)
+        solver_output % cfc12_vmr = (/gas % mixing_ratio(1,:,9)/)
+        solver_output % hcfc22_vmr = (/gas % mixing_ratio(1,:,10)/)
+        solver_output % ccl4_vmr = (/gas % mixing_ratio(1,:,11)/)
+        solver_output % cloud_fraction = (/cloud % fractional_std/)
+        solver_output % aerosol_mmr = reshape((/aerosol % mixing_ratio(1,:,:)/), shape(solver_output % aerosol_mmr))
+        solver_output % q_liquid = (/cloud % q_liq/)
+        solver_output % q_ice = (/cloud % q_ice/)
+        solver_output % re_liquid = (/cloud % re_liq/)
+        solver_output % re_ice = (/cloud % re_ice/)
+        solver_output % temperature_hl = (/thermodynamics % temperature_hl/)
+        solver_output % pressure_hl = (/thermodynamics % pressure_hl/)
+        solver_output % overlap_param = (/cloud % overlap_param/)
+
+        solver_data(i) = solver_output
+    end do
+
+      call solver_binding % put(solver_data, factory, solver_binding % mpi_size - 1)
+
+      call solver_binding % fence()
+
+      call solver_binding % fence()
       
     end if
     
@@ -282,6 +342,48 @@ program ecrad_driver
   ! --------------------------------------------------------
   ! Section 5: Check and save output
   ! --------------------------------------------------------
+
+  do i = 1, block_size
+      solver_output % skin_temperature = 0
+      solver_output % cos_solar_zenith_angle = 0
+      solver_output % sw_albedo(:) = 0
+      solver_output % sw_albedo_direct(:) = 0
+      solver_output % lw_emissivity(:) = 0
+      solver_output % solar_irradiance = 0
+      solver_output % q(:) = 0
+      solver_output % o3_mmr(:) = 0
+      solver_output % co2_vmr(:) = 0
+      solver_output % n2o_vmr(:) = 0
+      solver_output % ch4_vmr(:) = 0
+      solver_output % o2_vmr(:) = 0
+      solver_output % cfc11_vmr(:) = 0
+      solver_output % cfc12_vmr(:) = 0
+      solver_output % hcfc22_vmr(:) = 0
+      solver_output % ccl4_vmr(:) = 0
+      solver_output % cloud_fraction(:) = 0
+      solver_output % aerosol_mmr(:,:) = 0
+      solver_output % q_liquid(:) = 0
+      solver_output % q_ice(:) = 0
+      solver_output % re_liquid(:) = 0
+      solver_output % re_ice(:) = 0
+      solver_output % temperature_hl(:) = 0
+      solver_output % pressure_hl(:) = 0
+      solver_output % overlap_param(:) = 0
+
+      solver_data(i) = solver_output
+  end do
+
+  call solver_binding % put(solver_data, factory, solver_binding % mpi_size - 1)
+
+  call solver_binding % fence()
+
+  deallocate(solver_buffer)
+  deallocate(solver_data)
+
+  call factory % free_ecrad_output_type(solver_binding % mpi_err)
+  call factory % free_inferer_output_type(solver_binding % mpi_err)
+
+  call solver_binding % disconnect()
 
   is_out_of_bounds = flux%out_of_physical_bounds(driver_config%istartcol, driver_config%iendcol)
 
