@@ -301,11 +301,11 @@ program ecrad_driver
            &  config, single_level, thermodynamics, gas, cloud, aerosol, flux)
 
       do i = 1, block_size
-        solver_output % skin_temperature = single_level % skin_temperature
-        solver_output % cos_solar_zenith_angle = single_level % cos_sza
-        solver_output % sw_albedo = (/single_level % sw_albedo/)
-        solver_output % sw_albedo_direct = (/single_level % sw_albedo_direct/)
-        solver_output % lw_emissivity = (/single_level % lw_emissivity/)
+        solver_output % skin_temperature = single_level % skin_temperature(1)
+        solver_output % cos_solar_zenith_angle = single_level % cos_sza(1)
+        solver_output % sw_albedo = (/single_level % sw_albedo(1,:)/)
+        solver_output % sw_albedo_direct = (/single_level % sw_albedo_direct(1,:)/)
+        solver_output % lw_emissivity = (/single_level % lw_emissivity(1,:)/)
         solver_output % solar_irradiance = single_level % solar_irradiance
         solver_output % q = (/gas % mixing_ratio(1,:,1)/)
         solver_output % o3_mmr = (/gas % mixing_ratio(1,:,3)/)
