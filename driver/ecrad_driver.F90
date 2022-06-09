@@ -101,7 +101,8 @@ program ecrad_driver
   type(ecrad_binding_type)               :: solver_binding
   type(ecrad_output_type), allocatable   :: solver_data(:)
   type(inferer_output_type), allocatable :: solver_buffer(:)
-  integer                                :: block_size = 1
+  integer, parameter                     :: block_size = 1
+  integer                                :: i
  
 
   ! --------------------------------------------------------
@@ -215,7 +216,7 @@ program ecrad_driver
 
   ! Use parameters from the file to finalize the initialization of AI4Sim
   call factory % create_ecrad_output_type(nlev, nemissbands, nalbedobands, ngas, solver_output, solver_binding % mpi_err)
-  call factory % create_inferer_output_type(solver_input, solver_binding % mpi_err)
+  call factory % create_inferer_output_type(nlev, solver_input, solver_binding % mpi_err)
 
   allocate(solver_buffer(block_size))
   allocate(solver_data(block_size))
