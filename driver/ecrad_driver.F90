@@ -101,6 +101,8 @@ program ecrad_driver
   type(ecrad_binding_type)               :: solver_binding
   type(ecrad_output_type), allocatable   :: solver_data(:)
   type(inferer_output_type), allocatable :: solver_buffer(:)
+  ! Generic variables
+  integer                                :: dt(8)
 
 
   ! --------------------------------------------------------
@@ -329,7 +331,7 @@ program ecrad_driver
       call date_and_time(values=dt)
       write(*, '(i4, 5(a, i2.2), a, i3.3, a, i0)') dt(1), '-', dt(2), '-', dt(3), ' ', &
               & dt(5), ':', dt(6), ':', dt(7), ',', dt(8), &
-              & ' -- root -- INFO -- [SOLVER ] Putting to rank ', target_rank
+              & ' -- root -- INFO -- [SOLVER ] Putting to rank ', solver_binding % mpi_size - 1
       write(*, '(A, f10.4)') 'S->I    ', solver_data(1)
 
       call solver_binding % put(solver_data, factory, solver_binding % mpi_size - 1)
