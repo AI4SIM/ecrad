@@ -399,10 +399,10 @@ program ecrad_driver
 
   is_out_of_bounds = flux % out_of_physical_bounds(driver_config % istartcol, driver_config % iendcol)
 
-  flux % lw_up(1,:) = flux % lw_up(1,:) + 1/2 * (solver_buffer % delta_lw_add(:) - solver_buffer % delta_lw_diff(:))
-  flux % lw_dn(1,:) = flux % lw_dn(1,:) + 1/2 * (solver_buffer % delta_lw_add(:) + solver_buffer % delta_lw_diff(:))
-  flux % sw_up(1,:) = flux % sw_up(1,:) + 1/2 * (solver_buffer % delta_sw_add(:) - solver_buffer % delta_sw_diff(:))
-  flux % sw_dn(1,:) = flux % sw_dn(1,:) + 1/2 * (solver_buffer % delta_sw_add(:) + solver_buffer % delta_sw_diff(:))
+  flux % lw_up(1,:) = flux % lw_up(1,:) + 1/2 * (solver_buffer(1) % delta_lw_add(:) - solver_buffer(1) % delta_lw_diff(:))
+  flux % lw_dn(1,:) = flux % lw_dn(1,:) + 1/2 * (solver_buffer(1) % delta_lw_add(:) + solver_buffer(1) % delta_lw_diff(:))
+  flux % sw_up(1,:) = flux % sw_up(1,:) + 1/2 * (solver_buffer(1) % delta_sw_add(:) - solver_buffer(1) % delta_sw_diff(:))
+  flux % sw_dn(1,:) = flux % sw_dn(1,:) + 1/2 * (solver_buffer(1) % delta_sw_add(:) + solver_buffer(1) % delta_sw_diff(:))
 
   ! Store the fluxes in the output file
   call save_fluxes(file_name, config, thermodynamics, flux, &
