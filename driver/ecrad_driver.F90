@@ -300,6 +300,10 @@ program ecrad_driver
       call radiation(ncol, nlev, driver_config%istartcol, driver_config%iendcol, &
            &  config, single_level, thermodynamics, gas, cloud, aerosol, flux)
 
+      write(*, '(A)') 'After TripleClouds'
+
+      write(*, '(a, f10.4)') 'Single level ', single_level
+
       solver_output % skin_temperature = single_level % skin_temperature(1)
 
       write(*, '(A, f10.4)') 'Before ', single_level % skin_temperature(1)
