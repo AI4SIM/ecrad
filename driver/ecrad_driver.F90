@@ -397,15 +397,20 @@ program ecrad_driver
 
   call solver_binding % disconnect()
 
-  is_out_of_bounds = flux%out_of_physical_bounds(driver_config%istartcol, driver_config%iendcol)
+  is_out_of_bounds = flux % out_of_physical_bounds(driver_config % istartcol, driver_config % iendcol)
+
+  flux % lw_up(:,:) = flux % lw_up(:,:) + 1/2 * (solver_buffer % delta_lw_add(:,:) - solver_buffer % delta_lw_diff(:,:))
+  flux % lw_dn(:,:) = flux % lw_dn(:,:) + 1/2 * (solver_buffer % delta_lw_add(:,:) + solver_buffer % delta_lw_diff(:,:))
+  flux % sw_up(:,:) = flux % sw_up(:,:) + 1/2 * (solver_buffer % delta_sw_add(:,:) - solver_buffer % delta_sw_diff(:,:))
+  flux % sw_dn(:,:) = flux % sw_dn(:,:) + 1/2 * (solver_buffer % delta_sw_add(:,:) + solver_buffer % delta_sw_diff(:,:))
 
   ! Store the fluxes in the output file
   call save_fluxes(file_name, config, thermodynamics, flux, &
-       &   iverbose=driver_config%iverbose, is_hdf5_file=driver_config%do_write_hdf5, &
-       &   experiment_name=driver_config%experiment_name, &
-       &   is_double_precision=driver_config%do_write_double_precision)
+       &   iverbose=driver_config % iverbose, is_hdf5_file = driver_config % do_write_hdf5, &
+       &   experiment_name = driver_config % experiment_name, &
+       &   is_double_precision = driver_config % do_write_double_precision)
     
-  if (driver_config%iverbose >= 2) then
+  if (driver_config % iverbose >= 2) then
     write(nulout,'(a)') '------------------------------------------------------------------------------------'
   end if
 
