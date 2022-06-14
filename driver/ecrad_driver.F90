@@ -334,7 +334,7 @@ program ecrad_driver
                 & dt(5), ':', dt(6), ':', dt(7), ',', dt(8), &
                 & ' -- root -- INFO -- [SOLVER ] Putting to rank ', solver_binding % mpi_size - 1
         write(*, '(A, f10.4)') 'S->I    ', solver_data(1) % skin_temperature
-        write(*, '(A') 'Test out'
+        write(*, '(A)') 'Test out'
       end if
 
       call solver_binding % put(solver_data, factory, solver_binding % mpi_size - 1)
