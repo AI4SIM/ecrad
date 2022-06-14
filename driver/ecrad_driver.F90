@@ -328,11 +328,14 @@ program ecrad_driver
 
       solver_data(1) = solver_output
 
-      call date_and_time(values=dt)
-      write(*, '(i4, 5(a, i2.2), a, i3.3, a, i0)') dt(1), '-', dt(2), '-', dt(3), ' ', &
-              & dt(5), ':', dt(6), ':', dt(7), ',', dt(8), &
-              & ' -- root -- INFO -- [SOLVER ] Putting to rank ', solver_binding % mpi_size - 1
-      write(*, '(A, f10.4)') 'S->I    ', solver_data(1)
+      if (driver_config%iverbose >= 2) then
+        call date_and_time(values=dt)
+        write(nulout, '(i4, 5(a, i2.2), a, i3.3, a, i0)') dt(1), '-', dt(2), '-', dt(3), ' ', &
+                & dt(5), ':', dt(6), ':', dt(7), ',', dt(8), &
+                & ' -- root -- INFO -- [SOLVER ] Putting to rank ', solver_binding % mpi_size - 1
+        write(*, '(A, f10.4)') 'S->I    ', solver_data(1) % skin_temperature
+        write(*, '(A') 'Test out'
+      end if
 
       call solver_binding % put(solver_data, factory, solver_binding % mpi_size - 1)
 
@@ -340,15 +343,17 @@ program ecrad_driver
 
       call solver_binding % fence()
 
-      call date_and_time(values=dt)
-      write(*, '(i4, 5(a, i2.2), a, i3.3, a)') dt(1), '-', dt(2), '-', dt(3), ' ', dt(5), ':', dt(6), ':', dt(7), ',', dt(8), &
-            & ' -- root -- INFO -- [SOLVER ] Getting results from inferer'
-      write(*, *) 'I->S    ', solver_buffer(1) % delta_lw_add
-      write(*, *) 'I->S    ', solver_buffer(1) % delta_lw_diff
-      write(*, *) 'I->S    ', solver_buffer(1) % delta_sw_add
-      write(*, *) 'I->S    ', solver_buffer(1) % delta_lw_diff
-      write(*, *) 'I->S    ', solver_buffer(1) % hr_lw
-      write(*, *) 'I->S    ', solver_buffer(1) % hr_sw
+      if (driver_config%iverbose >= 2) then
+        call date_and_time(values=dt)
+        write(*, '(i4, 5(a, i2.2), a, i3.3, a)') dt(1), '-', dt(2), '-', dt(3), ' ', dt(5), ':', dt(6), ':', dt(7), ',', dt(8), &
+              & ' -- root -- INFO -- [SOLVER ] Getting results from inferer'
+        write(*, *) 'I->S    ', solver_buffer(1) % delta_lw_add
+        write(*, *) 'I->S    ', solver_buffer(1) % delta_lw_diff
+        write(*, *) 'I->S    ', solver_buffer(1) % delta_sw_add
+        write(*, *) 'I->S    ', solver_buffer(1) % delta_lw_diff
+        write(*, *) 'I->S    ', solver_buffer(1) % hr_lw
+        write(*, *) 'I->S    ', solver_buffer(1) % hr_sw
+      end if
     end if
     
   end do
