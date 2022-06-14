@@ -302,11 +302,11 @@ program ecrad_driver
 
       write(*, '(A)') 'After TripleClouds'
 
-      write(*, '(a, f10.4)') 'Single level ', single_level
+      write(*, '(a, f10.4)') 'Single level ', single_level % skin_temperature(1)
 
       solver_output % skin_temperature = single_level % skin_temperature(1)
 
-      write(*, '(A, f10.4)') 'Before ', single_level % skin_temperature(1)
+      write(*, '(A, f10.4)') 'After assignation ', solver_output % skin_temperature
 
       solver_output % cos_solar_zenith_angle = single_level % cos_sza(1)
       solver_output % sw_albedo = (/single_level % sw_albedo(1,:)/)
