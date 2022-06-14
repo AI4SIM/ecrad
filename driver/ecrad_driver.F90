@@ -301,6 +301,9 @@ program ecrad_driver
            &  config, single_level, thermodynamics, gas, cloud, aerosol, flux)
 
       solver_output % skin_temperature = single_level % skin_temperature(1)
+
+      write(*, '(A, f10.4)') 'Before ', single_level % skin_temperature(1)
+
       solver_output % cos_solar_zenith_angle = single_level % cos_sza(1)
       solver_output % sw_albedo = (/single_level % sw_albedo(1,:)/)
       solver_output % sw_albedo_direct = (/single_level % sw_albedo_direct(1,:)/)
