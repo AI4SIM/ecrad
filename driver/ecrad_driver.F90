@@ -355,18 +355,7 @@ program ecrad_driver
 
   is_out_of_bounds = flux % out_of_physical_bounds(driver_config % istartcol, driver_config % iendcol)
 
-  call date_and_time(values=dt)
-  write(*, '(i4, 5(a, i2.2), a, i3.3, a, f10.4)') dt(1), '-', dt(2), '-', dt(3), ' ', dt(5), ':', dt(6), ':', dt(7), ',', dt(8), &
-        & ' -- root -- INFO -- [SOLVER ] Calculating values'
-  write(*, *) flux % lw_up(1,:)
-
   flux % lw_up(1,:) = flux % lw_up(1,:) + 1/2 * (solver_buffer(1) % delta_lw_add(:) - solver_buffer(1) % delta_lw_diff(:))
-
-  call date_and_time(values=dt)
-  write(*, '(i4, 5(a, i2.2), a, i3.3, a, f10.4)') dt(1), '-', dt(2), '-', dt(3), ' ', dt(5), ':', dt(6), ':', dt(7), ',', dt(8), &
-        & ' -- root -- INFO -- [SOLVER ] Calculating final values'
-  write(*, *) flux % lw_up(1,:)
-
   flux % lw_dn(1,:) = flux % lw_dn(1,:) + 1/2 * (solver_buffer(1) % delta_lw_add(:) + solver_buffer(1) % delta_lw_diff(:))
   flux % sw_up(1,:) = flux % sw_up(1,:) + 1/2 * (solver_buffer(1) % delta_sw_add(:) - solver_buffer(1) % delta_sw_diff(:))
   flux % sw_dn(1,:) = flux % sw_dn(1,:) + 1/2 * (solver_buffer(1) % delta_sw_add(:) + solver_buffer(1) % delta_sw_diff(:))
