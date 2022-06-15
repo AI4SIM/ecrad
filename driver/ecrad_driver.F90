@@ -307,6 +307,8 @@ program ecrad_driver
       write(*, '(A, f10.4)') 'cos_solar_zenith_angle ', solver_output % cos_solar_zenith_angle
 
       solver_output % sw_albedo = (/single_level % sw_albedo(1,:)/)
+      write(*, '(A, f10.4)') 'sw_albedo1 ', single_level % sw_albedo(1,:)
+      write(*, '(A, f10.4)') 'sw_albedo2 ', single_level % sw_albedo(:,1)
       write(*, '(A, f10.4)') 'sw_albedo ', solver_output % sw_albedo
 
       solver_output % sw_albedo_direct = (/single_level % sw_albedo_direct(1,:)/)
