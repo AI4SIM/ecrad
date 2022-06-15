@@ -328,21 +328,13 @@ program ecrad_driver
 
       solver_data(1) = solver_output
 
-      if (driver_config%iverbose >= 2) then
-        call date_and_time(values=dt)
-        write(nulout, '(i4, 5(a, i2.2), a, i3.3, a, i0)') dt(1), '-', dt(2), '-', dt(3), ' ', &
-                & dt(5), ':', dt(6), ':', dt(7), ',', dt(8), &
-                & ' -- root -- INFO -- [SOLVER ] Putting to rank ', solver_binding % mpi_size - 1
-        write(*, '(A, f10.4)') 'S->I    ', solver_data(1) % skin_temperature
-      end if
-
       call solver_binding % put(solver_data, factory, solver_binding % mpi_size - 1)
 
       call solver_binding % fence()
 
       call solver_binding % fence()
 
-      if (driver_config%iverbose >= 2) then
+      if (driver_config%iverbose >= 4) then
         call date_and_time(values=dt)
         write(*, '(i4, 5(a, i2.2), a, i3.3, a)') dt(1), '-', dt(2), '-', dt(3), ' ', dt(5), ':', dt(6), ':', dt(7), ',', dt(8), &
               & ' -- root -- INFO -- [SOLVER ] Getting results from inferer'
@@ -403,7 +395,17 @@ program ecrad_driver
 
   is_out_of_bounds = flux % out_of_physical_bounds(driver_config % istartcol, driver_config % iendcol)
 
+  call date_and_time(values=dt)
+  write(*, '(i4, 5(a, i2.2), a, i3.3, a)') dt(1), '-', dt(2), '-', dt(3), ' ', dt(5), ':', dt(6), ':', dt(7), ',', dt(8), &
+        & ' -- root -- INFO -- [SOLVER ] Calculating final values'
+  write(*, '(i4, 5(a, i2.2), a, i3.3, a, f10.4)') dt(1), '-', dt(2), '-', dt(3), ' ', dt(5), ':', dt(6), ':', dt(7), ',', dt(8), &
+        & ' -- root -- INFO -- [SOLVER ] Calculating values', flux % lw_up(1,:)
+  
   flux % lw_up(1,:) = flux % lw_up(1,:) + 1/2 * (solver_buffer(1) % delta_lw_add(:) - solver_buffer(1) % delta_lw_diff(:))
+
+  write(*, '(i4, 5(a, i2.2), a, i3.3, a, f10.4)') dt(1), '-', dt(2), '-', dt(3), ' ', dt(5), ':', dt(6), ':', dt(7), ',', dt(8), &
+        & ' -- root -- INFO -- [SOLVER ] Calculating final values', flux % lw_up(1,:)
+
   flux % lw_dn(1,:) = flux % lw_dn(1,:) + 1/2 * (solver_buffer(1) % delta_lw_add(:) + solver_buffer(1) % delta_lw_diff(:))
   flux % sw_up(1,:) = flux % sw_up(1,:) + 1/2 * (solver_buffer(1) % delta_sw_add(:) - solver_buffer(1) % delta_sw_diff(:))
   flux % sw_dn(1,:) = flux % sw_dn(1,:) + 1/2 * (solver_buffer(1) % delta_sw_add(:) + solver_buffer(1) % delta_sw_diff(:))
