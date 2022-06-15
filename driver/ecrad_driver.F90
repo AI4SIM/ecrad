@@ -300,19 +300,24 @@ program ecrad_driver
       call radiation(ncol, nlev, driver_config%istartcol, driver_config%iendcol, &
            &  config, single_level, thermodynamics, gas, cloud, aerosol, flux)
 
-      write(*, '(A)') 'After TripleClouds'
-
-      write(*, '(a, f10.4)') 'Single level ', single_level % skin_temperature(1)
-
       solver_output % skin_temperature = single_level % skin_temperature(1)
-
-      write(*, '(A, f10.4)') 'After assignation ', solver_output % skin_temperature
+      write(*, '(A, f10.4)') 'skin_temperature ', solver_output % skin_temperature
 
       solver_output % cos_solar_zenith_angle = single_level % cos_sza(1)
+      write(*, '(A, f10.4)') 'cos_solar_zenith_angle ', solver_output % cos_solar_zenith_angle
+
       solver_output % sw_albedo = (/single_level % sw_albedo(1,:)/)
+      write(*, '(A, f10.4)') 'sw_albedo ', solver_output % sw_albedo
+
       solver_output % sw_albedo_direct = (/single_level % sw_albedo_direct(1,:)/)
+      write(*, '(A, f10.4)') 'sw_albedo_direct ', solver_output % sw_albedo_direct
+
       solver_output % lw_emissivity = (/single_level % lw_emissivity(1,:)/)
+      write(*, '(A, f10.4)') 'lw_emissivity ', solver_output % lw_emissivity
+
       solver_output % solar_irradiance = single_level % solar_irradiance
+      write(*, '(A, f10.4)') 'solar_irradiance ', solver_output % solar_irradiance
+
       solver_output % q = (/gas % mixing_ratio(1,:,1)/)
       solver_output % o3_mmr = (/gas % mixing_ratio(1,:,3)/)
       solver_output % co2_vmr = (/gas % mixing_ratio(1,:,2)/)
