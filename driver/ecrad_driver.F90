@@ -353,6 +353,34 @@ program ecrad_driver
   ! Section 5: Check and save output
   ! --------------------------------------------------------
 
+  is_out_of_bounds = flux % out_of_physical_bounds(driver_config % istartcol, driver_config % iendcol)
+
+  call date_and_time(values=dt)
+  write(*, '(i4, 5(a, i2.2), a, i3.3, a, f10.4)') dt(1), '-', dt(2), '-', dt(3), ' ', dt(5), ':', dt(6), ':', dt(7), ',', dt(8), &
+        & ' -- root -- INFO -- [SOLVER ] Calculating values'
+  write(*, *) flux % lw_up(1,:)
+
+  flux % lw_up(1,:) = flux % lw_up(1,:) + 1/2 * (solver_buffer(1) % delta_lw_add(:) - solver_buffer(1) % delta_lw_diff(:))
+
+  call date_and_time(values=dt)
+  write(*, '(i4, 5(a, i2.2), a, i3.3, a, f10.4)') dt(1), '-', dt(2), '-', dt(3), ' ', dt(5), ':', dt(6), ':', dt(7), ',', dt(8), &
+        & ' -- root -- INFO -- [SOLVER ] Calculating final values'
+  write(*, *) flux % lw_up(1,:)
+
+  flux % lw_dn(1,:) = flux % lw_dn(1,:) + 1/2 * (solver_buffer(1) % delta_lw_add(:) + solver_buffer(1) % delta_lw_diff(:))
+  flux % sw_up(1,:) = flux % sw_up(1,:) + 1/2 * (solver_buffer(1) % delta_sw_add(:) - solver_buffer(1) % delta_sw_diff(:))
+  flux % sw_dn(1,:) = flux % sw_dn(1,:) + 1/2 * (solver_buffer(1) % delta_sw_add(:) + solver_buffer(1) % delta_sw_diff(:))
+
+  ! Store the fluxes in the output file
+  call save_fluxes(file_name, config, thermodynamics, flux, &
+       &   iverbose=driver_config % iverbose, is_hdf5_file = driver_config % do_write_hdf5, &
+       &   experiment_name = driver_config % experiment_name, &
+       &   is_double_precision = driver_config % do_write_double_precision)
+    
+  if (driver_config % iverbose >= 2) then
+    write(nulout,'(a)') '------------------------------------------------------------------------------------'
+  end if
+
   solver_output % skin_temperature = 0
   solver_output % cos_solar_zenith_angle = 0
   solver_output % sw_albedo(:) = 0
@@ -392,33 +420,5 @@ program ecrad_driver
   call factory % free_inferer_output_type(solver_binding % mpi_err)
 
   call solver_binding % disconnect()
-
-  is_out_of_bounds = flux % out_of_physical_bounds(driver_config % istartcol, driver_config % iendcol)
-
-  call date_and_time(values=dt)
-  write(*, '(i4, 5(a, i2.2), a, i3.3, a, f10.4)') dt(1), '-', dt(2), '-', dt(3), ' ', dt(5), ':', dt(6), ':', dt(7), ',', dt(8), &
-        & ' -- root -- INFO -- [SOLVER ] Calculating values'
-  write(*, *) flux % lw_up(1,:)
-
-  flux % lw_up(1,:) = flux % lw_up(1,:) + 1/2 * (solver_buffer(1) % delta_lw_add(:) - solver_buffer(1) % delta_lw_diff(:))
-
-  call date_and_time(values=dt)
-  write(*, '(i4, 5(a, i2.2), a, i3.3, a, f10.4)') dt(1), '-', dt(2), '-', dt(3), ' ', dt(5), ':', dt(6), ':', dt(7), ',', dt(8), &
-        & ' -- root -- INFO -- [SOLVER ] Calculating final values'
-  write(*, *) flux % lw_up(1,:)
-
-  flux % lw_dn(1,:) = flux % lw_dn(1,:) + 1/2 * (solver_buffer(1) % delta_lw_add(:) + solver_buffer(1) % delta_lw_diff(:))
-  flux % sw_up(1,:) = flux % sw_up(1,:) + 1/2 * (solver_buffer(1) % delta_sw_add(:) - solver_buffer(1) % delta_sw_diff(:))
-  flux % sw_dn(1,:) = flux % sw_dn(1,:) + 1/2 * (solver_buffer(1) % delta_sw_add(:) + solver_buffer(1) % delta_sw_diff(:))
-
-  ! Store the fluxes in the output file
-  call save_fluxes(file_name, config, thermodynamics, flux, &
-       &   iverbose=driver_config % iverbose, is_hdf5_file = driver_config % do_write_hdf5, &
-       &   experiment_name = driver_config % experiment_name, &
-       &   is_double_precision = driver_config % do_write_double_precision)
-    
-  if (driver_config % iverbose >= 2) then
-    write(nulout,'(a)') '------------------------------------------------------------------------------------'
-  end if
 
 end program ecrad_driver
