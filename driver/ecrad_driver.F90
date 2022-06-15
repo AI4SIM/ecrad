@@ -301,25 +301,11 @@ program ecrad_driver
            &  config, single_level, thermodynamics, gas, cloud, aerosol, flux)
 
       solver_output % skin_temperature = single_level % skin_temperature(1)
-      write(*, '(A, f10.4)') 'skin_temperature ', solver_output % skin_temperature
-
       solver_output % cos_solar_zenith_angle = single_level % cos_sza(1)
-      write(*, '(A, f10.4)') 'cos_solar_zenith_angle ', solver_output % cos_solar_zenith_angle
-
       solver_output % sw_albedo = (/single_level % sw_albedo(1,:)/)
-      write(*, '(A, f10.4)') 'sw_albedo1 ', single_level % sw_albedo(1,:)
-      write(*, '(A, f10.4)') 'sw_albedo2 ', single_level % sw_albedo(:,1)
-      write(*, '(A, f10.4)') 'sw_albedo ', solver_output % sw_albedo
-
       solver_output % sw_albedo_direct = (/single_level % sw_albedo_direct(1,:)/)
-      write(*, '(A, f10.4)') 'sw_albedo_direct ', solver_output % sw_albedo_direct
-
       solver_output % lw_emissivity = (/single_level % lw_emissivity(1,:)/)
-      write(*, '(A, f10.4)') 'lw_emissivity ', solver_output % lw_emissivity
-
       solver_output % solar_irradiance = single_level % solar_irradiance
-      write(*, '(A, f10.4)') 'solar_irradiance ', solver_output % solar_irradiance
-
       solver_output % q = (/gas % mixing_ratio(1,:,1)/)
       solver_output % o3_mmr = (/gas % mixing_ratio(1,:,3)/)
       solver_output % co2_vmr = (/gas % mixing_ratio(1,:,2)/)
@@ -330,15 +316,15 @@ program ecrad_driver
       solver_output % cfc12_vmr = (/gas % mixing_ratio(1,:,9)/)
       solver_output % hcfc22_vmr = (/gas % mixing_ratio(1,:,10)/)
       solver_output % ccl4_vmr = (/gas % mixing_ratio(1,:,11)/)
-      solver_output % cloud_fraction = (/cloud % fractional_std/)
+      solver_output % cloud_fraction = (/cloud % fraction(1,:)/)
       solver_output % aerosol_mmr = reshape((/aerosol % mixing_ratio(1,:,:)/), shape(solver_output % aerosol_mmr))
-      solver_output % q_liquid = (/cloud % q_liq/)
-      solver_output % q_ice = (/cloud % q_ice/)
-      solver_output % re_liquid = (/cloud % re_liq/)
-      solver_output % re_ice = (/cloud % re_ice/)
-      solver_output % temperature_hl = (/thermodynamics % temperature_hl/)
-      solver_output % pressure_hl = (/thermodynamics % pressure_hl/)
-      solver_output % overlap_param = (/cloud % overlap_param/)
+      solver_output % q_liquid = (/cloud % q_liq(1,:)/)
+      solver_output % q_ice = (/cloud % q_ice(1,:)/)
+      solver_output % re_liquid = (/cloud % re_liq(1,:)/)
+      solver_output % re_ice = (/cloud % re_ice(1,:)/)
+      solver_output % temperature_hl = (/thermodynamics % temperature_hl(1,:)/)
+      solver_output % pressure_hl = (/thermodynamics % pressure_hl(1,:)/)
+      solver_output % overlap_param = (/cloud % overlap_param(1,:)/)
 
       solver_data(1) = solver_output
 
@@ -348,7 +334,6 @@ program ecrad_driver
                 & dt(5), ':', dt(6), ':', dt(7), ',', dt(8), &
                 & ' -- root -- INFO -- [SOLVER ] Putting to rank ', solver_binding % mpi_size - 1
         write(*, '(A, f10.4)') 'S->I    ', solver_data(1) % skin_temperature
-        write(*, '(A)') 'Test out'
       end if
 
       call solver_binding % put(solver_data, factory, solver_binding % mpi_size - 1)
