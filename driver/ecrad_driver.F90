@@ -101,6 +101,7 @@ program ecrad_driver
   type(ecrad_binding_type)               :: solver_binding
   type(ecrad_output_type), allocatable   :: solver_data(:)
   type(inferer_output_type), allocatable :: solver_buffer(:)
+  integer                                :: col_number
   ! Generic variables
   integer                                :: dt(8)
 
@@ -223,6 +224,8 @@ program ecrad_driver
 
   call solver_binding % connect(solver_buffer, 1, factory)
 
+  col_number = solver_binding % rank + 1
+
   ! --------------------------------------------------------
   ! Section 4: Call radiation scheme
   ! --------------------------------------------------------
@@ -300,31 +303,31 @@ program ecrad_driver
       call radiation(ncol, nlev, driver_config%istartcol, driver_config%iendcol, &
            &  config, single_level, thermodynamics, gas, cloud, aerosol, flux)
 
-      solver_output % skin_temperature = single_level % skin_temperature(1)
-      solver_output % cos_solar_zenith_angle = single_level % cos_sza(1)
-      solver_output % sw_albedo = (/single_level % sw_albedo(1,:)/)
-      solver_output % sw_albedo_direct = (/single_level % sw_albedo_direct(1,:)/)
-      solver_output % lw_emissivity = (/single_level % lw_emissivity(1,:)/)
+      solver_output % skin_temperature = single_level % skin_temperature(col_number)
+      solver_output % cos_solar_zenith_angle = single_level % cos_sza(col_number)
+      solver_output % sw_albedo = (/single_level % sw_albedo(col_number,:)/)
+      solver_output % sw_albedo_direct = (/single_level % sw_albedo_direct(col_number,:)/)
+      solver_output % lw_emissivity = (/single_level % lw_emissivity(col_number,:)/)
       solver_output % solar_irradiance = single_level % solar_irradiance
-      solver_output % q = (/gas % mixing_ratio(1,:,1)/)
-      solver_output % o3_mmr = (/gas % mixing_ratio(1,:,3)/)
-      solver_output % co2_vmr = (/gas % mixing_ratio(1,:,2)/)
-      solver_output % n2o_vmr = (/gas % mixing_ratio(1,:,4)/)
-      solver_output % ch4_vmr = (/gas % mixing_ratio(1,:,6)/)
-      solver_output % o2_vmr = (/gas % mixing_ratio(1,:,7)/)
-      solver_output % cfc11_vmr = (/gas % mixing_ratio(1,:,8)/)
-      solver_output % cfc12_vmr = (/gas % mixing_ratio(1,:,9)/)
-      solver_output % hcfc22_vmr = (/gas % mixing_ratio(1,:,10)/)
-      solver_output % ccl4_vmr = (/gas % mixing_ratio(1,:,11)/)
-      solver_output % cloud_fraction = (/cloud % fraction(1,:)/)
-      solver_output % aerosol_mmr = reshape((/aerosol % mixing_ratio(1,:,:)/), shape(solver_output % aerosol_mmr))
-      solver_output % q_liquid = (/cloud % q_liq(1,:)/)
-      solver_output % q_ice = (/cloud % q_ice(1,:)/)
-      solver_output % re_liquid = (/cloud % re_liq(1,:)/)
-      solver_output % re_ice = (/cloud % re_ice(1,:)/)
-      solver_output % temperature_hl = (/thermodynamics % temperature_hl(1,:)/)
-      solver_output % pressure_hl = (/thermodynamics % pressure_hl(1,:)/)
-      solver_output % overlap_param = (/cloud % overlap_param(1,:)/)
+      solver_output % q = (/gas % mixing_ratio(col_number,:,1)/)
+      solver_output % o3_mmr = (/gas % mixing_ratio(col_number,:,3)/)
+      solver_output % co2_vmr = (/gas % mixing_ratio(col_number,:,2)/)
+      solver_output % n2o_vmr = (/gas % mixing_ratio(col_number,:,4)/)
+      solver_output % ch4_vmr = (/gas % mixing_ratio(col_number,:,6)/)
+      solver_output % o2_vmr = (/gas % mixing_ratio(col_number,:,7)/)
+      solver_output % cfc11_vmr = (/gas % mixing_ratio(col_number,:,8)/)
+      solver_output % cfc12_vmr = (/gas % mixing_ratio(col_number,:,9)/)
+      solver_output % hcfc22_vmr = (/gas % mixing_ratio(col_number,:,10)/)
+      solver_output % ccl4_vmr = (/gas % mixing_ratio(col_number,:,11)/)
+      solver_output % cloud_fraction = (/cloud % fraction(col_number,:)/)
+      solver_output % aerosol_mmr = reshape((/aerosol % mixing_ratio(col_number,:,:)/), shape(solver_output % aerosol_mmr))
+      solver_output % q_liquid = (/cloud % q_liq(col_number,:)/)
+      solver_output % q_ice = (/cloud % q_ice(col_number,:)/)
+      solver_output % re_liquid = (/cloud % re_liq(col_number,:)/)
+      solver_output % re_ice = (/cloud % re_ice(col_number,:)/)
+      solver_output % temperature_hl = (/thermodynamics % temperature_hl(col_number,:)/)
+      solver_output % pressure_hl = (/thermodynamics % pressure_hl(col_number,:)/)
+      solver_output % overlap_param = (/cloud % overlap_param(col_number,:)/)
 
       solver_data(1) = solver_output
 
@@ -355,13 +358,13 @@ program ecrad_driver
 
   is_out_of_bounds = flux % out_of_physical_bounds(driver_config % istartcol, driver_config % iendcol)
 
-  flux % lw_up(1,:) = flux % lw_up(1,:) + 1/2 * (solver_buffer(1) % delta_lw_add(:) - solver_buffer(1) % delta_lw_diff(:))
-  flux % lw_dn(1,:) = flux % lw_dn(1,:) + 1/2 * (solver_buffer(1) % delta_lw_add(:) + solver_buffer(1) % delta_lw_diff(:))
-  flux % sw_up(1,:) = flux % sw_up(1,:) + 1/2 * (solver_buffer(1) % delta_sw_add(:) - solver_buffer(1) % delta_sw_diff(:))
-  flux % sw_dn(1,:) = flux % sw_dn(1,:) + 1/2 * (solver_buffer(1) % delta_sw_add(:) + solver_buffer(1) % delta_sw_diff(:))
+  flux % lw_up(1,:) = flux % lw_up(col_number,:) + 1/2 * (solver_buffer(1) % delta_lw_add(:) - solver_buffer(1) % delta_lw_diff(:))
+  flux % lw_dn(1,:) = flux % lw_dn(col_number,:) + 1/2 * (solver_buffer(1) % delta_lw_add(:) + solver_buffer(1) % delta_lw_diff(:))
+  flux % sw_up(1,:) = flux % sw_up(col_number,:) + 1/2 * (solver_buffer(1) % delta_sw_add(:) - solver_buffer(1) % delta_sw_diff(:))
+  flux % sw_dn(1,:) = flux % sw_dn(col_number,:) + 1/2 * (solver_buffer(1) % delta_sw_add(:) + solver_buffer(1) % delta_sw_diff(:))
 
   ! Store the fluxes in the output file
-  call save_fluxes(file_name, config, thermodynamics, flux, &
+  call save_fluxes(file_name + "_" + solver_binding % rank, config, thermodynamics, flux, &
        &   iverbose=driver_config % iverbose, is_hdf5_file = driver_config % do_write_hdf5, &
        &   experiment_name = driver_config % experiment_name, &
        &   is_double_precision = driver_config % do_write_double_precision)
