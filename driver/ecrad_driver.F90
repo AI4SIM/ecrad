@@ -104,6 +104,7 @@ program ecrad_driver
   integer                                :: col_number
   ! Generic variables
   integer                                :: dt(8)
+  character(len=4)                       :: rank_string
   character(len=512)                     :: output_file_name
 
 
@@ -364,8 +365,9 @@ program ecrad_driver
   flux % sw_up(1,:) = flux % sw_up(col_number,:) + 1/2 * (solver_buffer(1) % delta_sw_add(:) - solver_buffer(1) % delta_sw_diff(:))
   flux % sw_dn(1,:) = flux % sw_dn(col_number,:) + 1/2 * (solver_buffer(1) % delta_sw_add(:) + solver_buffer(1) % delta_sw_diff(:))
 
-  output_file_name = file_name(1:len(trim(file_name)))//'_'//solver_binding % rank
-  
+  write(rank_string,'(I4)') solver_binding % rank
+  output_file_name = file_name(1:len(trim(file_name)))//'_'//rank_string
+
   ! Store the fluxes in the output file
   call save_fluxes(output_file_name, config, thermodynamics, flux, &
        &   iverbose=driver_config % iverbose, is_hdf5_file = driver_config % do_write_hdf5, &
