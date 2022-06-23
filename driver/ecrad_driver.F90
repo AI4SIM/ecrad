@@ -302,7 +302,7 @@ program ecrad_driver
       end if
       
       ! Call the ECRAD radiation scheme
-      call radiation(ncol, nlev, driver_config%istartcol, driver_config%iendcol, &
+      call radiation(ncol, nlev, solver_binding % rank, solver_binding % rank, &
            &  config, single_level, thermodynamics, gas, cloud, aerosol, flux)
 
       solver_output % skin_temperature = single_level % skin_temperature(col_number)
