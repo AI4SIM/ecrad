@@ -299,10 +299,11 @@ program ecrad_driver
       ! Run radiation scheme serially
       if (driver_config%iverbose >= 3) then
         write(nulout,'(a,i0,a)')  'Processing ', ncol, ' columns'
+        write(nulout,'(a,i0,a,i0)')  'istartcol ', driver_config % istartcol, ' | iendcol ', driver_config % iendcol
       end if
       
       ! Call the ECRAD radiation scheme
-      call radiation(ncol, nlev, solver_binding % rank, solver_binding % rank, &
+      call radiation(ncol, nlev, driver_config % istartcol, driver_config % iendcol, &
            &  config, single_level, thermodynamics, gas, cloud, aerosol, flux)
 
       solver_output % skin_temperature = single_level % skin_temperature(col_number)
@@ -343,12 +344,12 @@ program ecrad_driver
         call date_and_time(values=dt)
         write(*, '(i4, 5(a, i2.2), a, i3.3, a)') dt(1), '-', dt(2), '-', dt(3), ' ', dt(5), ':', dt(6), ':', dt(7), ',', dt(8), &
               & ' -- root -- INFO -- [SOLVER ] Getting results from inferer'
-        write(*, *) 'I->S    ', solver_buffer(1) % delta_lw_add
-        write(*, *) 'I->S    ', solver_buffer(1) % delta_lw_diff
+        write(*, *) 'I->S    ', solver_buffer(1) % hr_sw
+        write(*, *) 'I->S    ', solver_buffer(1) % hr_lw
+        write(*, *) 'I->S    ', solver_buffer(1) % delta_sw_diff
         write(*, *) 'I->S    ', solver_buffer(1) % delta_sw_add
         write(*, *) 'I->S    ', solver_buffer(1) % delta_lw_diff
-        write(*, *) 'I->S    ', solver_buffer(1) % hr_lw
-        write(*, *) 'I->S    ', solver_buffer(1) % hr_sw
+        write(*, *) 'I->S    ', solver_buffer(1) % delta_lw_add
       end if
     end if
     
