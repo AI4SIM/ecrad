@@ -299,12 +299,12 @@ program ecrad_driver
       ! Run radiation scheme serially
       if (driver_config%iverbose >= 3) then
         write(nulout,'(a,i0,a)')  'Processing ', ncol, ' columns'
-        write(nulout,'(a,i0,a,i0)')  'istartcol ', driver_config % istartcol, ' | iendcol ', driver_config % iendcol
+        write(nulout,'(a,i0,a,i0)')  'Processing from column ', solver_binding % rank + 1, ' to column ', solver_binding % rank + 1
       end if
       
       ! Call the ECRAD radiation scheme
-      !call radiation(ncol, nlev, driver_config % istartcol, driver_config % iendcol, &
-      !     &  config, single_level, thermodynamics, gas, cloud, aerosol, flux)
+      call radiation(ncol, nlev, solver_binding % rank + 1, solver_binding % rank + 1, &
+           &  config, single_level, thermodynamics, gas, cloud, aerosol, flux)
 
       solver_output % skin_temperature = single_level % skin_temperature(col_number)
       solver_output % cos_solar_zenith_angle = single_level % cos_sza(col_number)
