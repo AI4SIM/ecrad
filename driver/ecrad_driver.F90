@@ -367,10 +367,14 @@ program ecrad_driver
 
   is_out_of_bounds = flux % out_of_physical_bounds(driver_config % istartcol, driver_config % iendcol)
 
-  flux % lw_up(1,:) = flux % lw_up(istartcol + jblock - 1,:) + 1/2 * (solver_buffer(1) % delta_lw_add(:) - solver_buffer(1) % delta_lw_diff(:))
-  flux % lw_dn(1,:) = flux % lw_dn(istartcol + jblock - 1,:) + 1/2 * (solver_buffer(1) % delta_lw_add(:) + solver_buffer(1) % delta_lw_diff(:))
-  flux % sw_up(1,:) = flux % sw_up(istartcol + jblock - 1,:) + 1/2 * (solver_buffer(1) % delta_sw_add(:) - solver_buffer(1) % delta_sw_diff(:))
-  flux % sw_dn(1,:) = flux % sw_dn(istartcol + jblock - 1,:) + 1/2 * (solver_buffer(1) % delta_sw_add(:) + solver_buffer(1) % delta_sw_diff(:))
+  flux % lw_up(1,:) = flux % lw_up(istartcol + jblock - 1,:) &
+          & + 1/2 * (solver_buffer(1) % delta_lw_add(:) - solver_buffer(1) % delta_lw_diff(:))
+  flux % lw_dn(1,:) = flux % lw_dn(istartcol + jblock - 1,:) &
+          & + 1/2 * (solver_buffer(1) % delta_lw_add(:) + solver_buffer(1) % delta_lw_diff(:))
+  flux % sw_up(1,:) = flux % sw_up(istartcol + jblock - 1,:) &
+          & + 1/2 * (solver_buffer(1) % delta_sw_add(:) - solver_buffer(1) % delta_sw_diff(:))
+  flux % sw_dn(1,:) = flux % sw_dn(istartcol + jblock - 1,:) &
+          & + 1/2 * (solver_buffer(1) % delta_sw_add(:) + solver_buffer(1) % delta_sw_diff(:))
 
   write(rank_string,'(I4)') solver_binding % rank
   output_file_name = file_name(1:len(trim(file_name)))//'_'//rank_string
