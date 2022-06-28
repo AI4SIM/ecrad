@@ -324,7 +324,8 @@ program ecrad_driver
         solver_output % hcfc22_vmr = (/gas % mixing_ratio(istartcol + jblock - 1,:,10)/)
         solver_output % ccl4_vmr = (/gas % mixing_ratio(istartcol + jblock - 1,:,11)/)
         solver_output % cloud_fraction = (/cloud % fraction(istartcol + jblock - 1,:)/)
-        solver_output % aerosol_mmr = reshape((/aerosol % mixing_ratio(istartcol + jblock - 1,:,:)/), shape(solver_output % aerosol_mmr))
+        solver_output % aerosol_mmr = reshape((/aerosol % mixing_ratio(istartcol + jblock - 1,:,:)/), &
+                & shape(solver_output % aerosol_mmr))
         solver_output % q_liquid = (/cloud % q_liq(istartcol + jblock - 1,:)/)
         solver_output % q_ice = (/cloud % q_ice(istartcol + jblock - 1,:)/)
         solver_output % re_liquid = (/cloud % re_liq(istartcol + jblock - 1,:)/)
