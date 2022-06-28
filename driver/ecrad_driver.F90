@@ -359,6 +359,12 @@ program ecrad_driver
         write(*, *) 'I->S    ', solver_buffer(1) % delta_lw_add
       end if
 
+      ! --------------------------------------------------------
+      ! Section 5: Check and save output
+      ! --------------------------------------------------------
+
+      is_out_of_bounds = flux % out_of_physical_bounds(driver_config % istartcol, driver_config % iendcol)
+
       do jblock = 1, driver_config % nblocksize
         flux % lw_up(istartcol + jblock - 1,:) = flux % lw_up(istartcol + jblock - 1,:) &
               & + 1/2 * (solver_buffer(1) % delta_lw_add(:) - solver_buffer(1) % delta_lw_diff(:))
@@ -370,66 +376,61 @@ program ecrad_driver
                 & + 1/2 * (solver_buffer(1) % delta_sw_add(:) + solver_buffer(1) % delta_sw_diff(:))
       end do
     end if
-    
+
+    write(rank_string,'(I4)') solver_binding % rank
+    output_file_name = file_name(1:len(trim(file_name)))//'_'//rank_string
+
+    ! Store the fluxes in the output file
+    call save_fluxes(output_file_name, config, thermodynamics, flux, &
+         &   iverbose=driver_config % iverbose, is_hdf5_file = driver_config % do_write_hdf5, &
+         &   experiment_name = driver_config % experiment_name, &
+         &   is_double_precision = driver_config % do_write_double_precision)
+
+    if (driver_config % iverbose >= 2) then
+      write(nulout,'(a)') '------------------------------------------------------------------------------------'
+    end if
+
+    do jblock = 1, driver_config % nblocksize
+      solver_output % skin_temperature = 0
+      solver_output % cos_solar_zenith_angle = 0
+      solver_output % sw_albedo(:) = 0
+      solver_output % sw_albedo_direct(:) = 0
+      solver_output % lw_emissivity(:) = 0
+      solver_output % solar_irradiance = 0
+      solver_output % q(:) = 0
+      solver_output % o3_mmr(:) = 0
+      solver_output % co2_vmr(:) = 0
+      solver_output % n2o_vmr(:) = 0
+      solver_output % ch4_vmr(:) = 0
+      solver_output % o2_vmr(:) = 0
+      solver_output % cfc11_vmr(:) = 0
+      solver_output % cfc12_vmr(:) = 0
+      solver_output % hcfc22_vmr(:) = 0
+      solver_output % ccl4_vmr(:) = 0
+      solver_output % cloud_fraction(:) = 0
+      solver_output % aerosol_mmr(:,:) = 0
+      solver_output % q_liquid(:) = 0
+      solver_output % q_ice(:) = 0
+      solver_output % re_liquid(:) = 0
+      solver_output % re_ice(:) = 0
+      solver_output % temperature_hl(:) = 0
+      solver_output % pressure_hl(:) = 0
+      solver_output % overlap_param(:) = 0
+
+      solver_data(jblock) = solver_output
+    end do
+
+    call solver_binding % put(solver_data, factory, solver_binding % mpi_size - 1)
+
+    call solver_binding % fence()
+
+    deallocate(solver_buffer)
+    deallocate(solver_data)
+
+    call factory % free_ecrad_output_type(solver_binding % mpi_err)
+    call factory % free_inferer_output_type(solver_binding % mpi_err)
+
+    call solver_binding % disconnect()
+
   end do
-
-  ! --------------------------------------------------------
-  ! Section 5: Check and save output
-  ! --------------------------------------------------------
-
-  is_out_of_bounds = flux % out_of_physical_bounds(driver_config % istartcol, driver_config % iendcol)
-
-  write(rank_string,'(I4)') solver_binding % rank
-  output_file_name = file_name(1:len(trim(file_name)))//'_'//rank_string
-
-  ! Store the fluxes in the output file
-  call save_fluxes(output_file_name, config, thermodynamics, flux, &
-       &   iverbose=driver_config % iverbose, is_hdf5_file = driver_config % do_write_hdf5, &
-       &   experiment_name = driver_config % experiment_name, &
-       &   is_double_precision = driver_config % do_write_double_precision)
-    
-  if (driver_config % iverbose >= 2) then
-    write(nulout,'(a)') '------------------------------------------------------------------------------------'
-  end if
-
-  solver_output % skin_temperature = 0
-  solver_output % cos_solar_zenith_angle = 0
-  solver_output % sw_albedo(:) = 0
-  solver_output % sw_albedo_direct(:) = 0
-  solver_output % lw_emissivity(:) = 0
-  solver_output % solar_irradiance = 0
-  solver_output % q(:) = 0
-  solver_output % o3_mmr(:) = 0
-  solver_output % co2_vmr(:) = 0
-  solver_output % n2o_vmr(:) = 0
-  solver_output % ch4_vmr(:) = 0
-  solver_output % o2_vmr(:) = 0
-  solver_output % cfc11_vmr(:) = 0
-  solver_output % cfc12_vmr(:) = 0
-  solver_output % hcfc22_vmr(:) = 0
-  solver_output % ccl4_vmr(:) = 0
-  solver_output % cloud_fraction(:) = 0
-  solver_output % aerosol_mmr(:,:) = 0
-  solver_output % q_liquid(:) = 0
-  solver_output % q_ice(:) = 0
-  solver_output % re_liquid(:) = 0
-  solver_output % re_ice(:) = 0
-  solver_output % temperature_hl(:) = 0
-  solver_output % pressure_hl(:) = 0
-  solver_output % overlap_param(:) = 0
-
-  solver_data(1) = solver_output
-
-  call solver_binding % put(solver_data, factory, solver_binding % mpi_size - 1)
-
-  call solver_binding % fence()
-
-  deallocate(solver_buffer)
-  deallocate(solver_data)
-
-  call factory % free_ecrad_output_type(solver_binding % mpi_err)
-  call factory % free_inferer_output_type(solver_binding % mpi_err)
-
-  call solver_binding % disconnect()
-
 end program ecrad_driver
