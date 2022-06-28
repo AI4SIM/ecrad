@@ -101,7 +101,6 @@ program ecrad_driver
   type(ecrad_binding_type)               :: solver_binding
   type(ecrad_output_type), allocatable   :: solver_data(:)
   type(inferer_output_type), allocatable :: solver_buffer(:)
-  integer                                :: col_number
   ! Generic variables
   integer                                :: dt(8)
   character(len=4)                       :: rank_string
@@ -221,12 +220,10 @@ program ecrad_driver
   call factory % create_ecrad_output_type(nlev, nemissbands, nalbedobands, ngas, solver_output, solver_binding % mpi_err)
   call factory % create_inferer_output_type(nlev, solver_input, solver_binding % mpi_err)
 
-  allocate(solver_buffer(1))
-  allocate(solver_data(1))
+  allocate(solver_buffer(driver_config % nblocksize))
+  allocate(solver_data(driver_config % nblocksize))
 
-  call solver_binding % connect(solver_buffer, 1, factory)
-
-  col_number = solver_binding % rank + 1
+  call solver_binding % connect(solver_buffer, driver_config % nblocksize, factory)
 
   ! --------------------------------------------------------
   ! Section 4: Call radiation scheme
@@ -296,48 +293,57 @@ program ecrad_driver
       write(nulout, '(a,g11.5,a)') 'Time elapsed in radiative transfer: ', tstop-tstart, ' seconds'
       
     else
-      ! Run radiation scheme serially
-      if (driver_config%iverbose >= 3) then
-        write(nulout,'(a,i0,a)')  'Processing ', ncol, ' columns'
-        write(nulout,'(a,i0,a,i0)')  'Processing from column ', solver_binding % rank + 1, ' to column ', solver_binding % rank + 1
-      end if
-      
-      ! Call the ECRAD radiation scheme
-      call radiation(ncol, nlev, solver_binding % rank + 1, solver_binding % rank + 1, &
-           &  config, single_level, thermodynamics, gas, cloud, aerosol, flux)
+      istartcol = solver_binding % rank * driver_config % nblocksize + 1
+      iendcol = (solver_binding % rank + 1) * driver_config % nblocksize
 
-      solver_output % skin_temperature = single_level % skin_temperature(col_number)
-      solver_output % cos_solar_zenith_angle = single_level % cos_sza(col_number)
-      solver_output % sw_albedo = (/single_level % sw_albedo(col_number,:)/)
-      solver_output % sw_albedo_direct = (/single_level % sw_albedo_direct(col_number,:)/)
-      solver_output % lw_emissivity = (/single_level % lw_emissivity(col_number,:)/)
-      solver_output % solar_irradiance = single_level % solar_irradiance
-      solver_output % q = (/gas % mixing_ratio(col_number,:,1)/)
-      solver_output % o3_mmr = (/gas % mixing_ratio(col_number,:,3)/)
-      solver_output % co2_vmr = (/gas % mixing_ratio(col_number,:,2)/)
-      solver_output % n2o_vmr = (/gas % mixing_ratio(col_number,:,4)/)
-      solver_output % ch4_vmr = (/gas % mixing_ratio(col_number,:,6)/)
-      solver_output % o2_vmr = (/gas % mixing_ratio(col_number,:,7)/)
-      solver_output % cfc11_vmr = (/gas % mixing_ratio(col_number,:,8)/)
-      solver_output % cfc12_vmr = (/gas % mixing_ratio(col_number,:,9)/)
-      solver_output % hcfc22_vmr = (/gas % mixing_ratio(col_number,:,10)/)
-      solver_output % ccl4_vmr = (/gas % mixing_ratio(col_number,:,11)/)
-      solver_output % cloud_fraction = (/cloud % fraction(col_number,:)/)
-      solver_output % aerosol_mmr = reshape((/aerosol % mixing_ratio(col_number,:,:)/), shape(solver_output % aerosol_mmr))
-      solver_output % q_liquid = (/cloud % q_liq(col_number,:)/)
-      solver_output % q_ice = (/cloud % q_ice(col_number,:)/)
-      solver_output % re_liquid = (/cloud % re_liq(col_number,:)/)
-      solver_output % re_ice = (/cloud % re_ice(col_number,:)/)
-      solver_output % temperature_hl = (/thermodynamics % temperature_hl(col_number,:)/)
-      solver_output % pressure_hl = (/thermodynamics % pressure_hl(col_number,:)/)
-      solver_output % overlap_param = (/cloud % overlap_param(col_number,:)/)
+      do jblock = 1, driver_config % nblocksize
+        ! Run radiation scheme serially
+        if (driver_config%iverbose >= 3) then
+          write(nulout,'(a,i0,a)')  'Processing ', ncol, ' columns'
+          write(nulout,'(a,i0,a,i0)')  'Processing from column ', istartcol, ' to column ', iendcol
+        end if
 
-      solver_data(1) = solver_output
+        ! Call the ECRAD radiation scheme
+        call radiation(ncol, nlev, istartcol, iendcol, config, single_level, thermodynamics, gas, cloud, aerosol, flux)
 
+        ! Create data structure for AI4Sim
+        solver_output % skin_temperature = single_level % skin_temperature(istartcol + jblock - 1)
+        solver_output % cos_solar_zenith_angle = single_level % cos_sza(istartcol + jblock - 1)
+        solver_output % sw_albedo = (/single_level % sw_albedo(istartcol + jblock - 1,:)/)
+        solver_output % sw_albedo_direct = (/single_level % sw_albedo_direct(istartcol + jblock - 1,:)/)
+        solver_output % lw_emissivity = (/single_level % lw_emissivity(istartcol + jblock - 1,:)/)
+        solver_output % solar_irradiance = single_level % solar_irradiance
+        solver_output % q = (/gas % mixing_ratio(istartcol + jblock - 1,:,1)/)
+        solver_output % o3_mmr = (/gas % mixing_ratio(istartcol + jblock - 1,:,3)/)
+        solver_output % co2_vmr = (/gas % mixing_ratio(istartcol + jblock - 1,:,2)/)
+        solver_output % n2o_vmr = (/gas % mixing_ratio(istartcol + jblock - 1,:,4)/)
+        solver_output % ch4_vmr = (/gas % mixing_ratio(istartcol + jblock - 1,:,6)/)
+        solver_output % o2_vmr = (/gas % mixing_ratio(istartcol + jblock - 1,:,7)/)
+        solver_output % cfc11_vmr = (/gas % mixing_ratio(istartcol + jblock - 1,:,8)/)
+        solver_output % cfc12_vmr = (/gas % mixing_ratio(istartcol + jblock - 1,:,9)/)
+        solver_output % hcfc22_vmr = (/gas % mixing_ratio(istartcol + jblock - 1,:,10)/)
+        solver_output % ccl4_vmr = (/gas % mixing_ratio(istartcol + jblock - 1,:,11)/)
+        solver_output % cloud_fraction = (/cloud % fraction(istartcol + jblock - 1,:)/)
+        solver_output % aerosol_mmr = reshape((/aerosol % mixing_ratio(istartcol + jblock - 1,:,:)/), shape(solver_output % aerosol_mmr))
+        solver_output % q_liquid = (/cloud % q_liq(istartcol + jblock - 1,:)/)
+        solver_output % q_ice = (/cloud % q_ice(istartcol + jblock - 1,:)/)
+        solver_output % re_liquid = (/cloud % re_liq(istartcol + jblock - 1,:)/)
+        solver_output % re_ice = (/cloud % re_ice(istartcol + jblock - 1,:)/)
+        solver_output % temperature_hl = (/thermodynamics % temperature_hl(istartcol + jblock - 1,:)/)
+        solver_output % pressure_hl = (/thermodynamics % pressure_hl(istartcol + jblock - 1,:)/)
+        solver_output % overlap_param = (/cloud % overlap_param(istartcol + jblock - 1,:)/)
+
+        ! Add data structure to the array
+        solver_data(jblock) = solver_output
+      end do
+
+      ! Put data into the inferer buffer
       call solver_binding % put(solver_data, factory, solver_binding % mpi_size - 1)
 
+      ! Wait for all the ecrad process to write into the inferer buffer
       call solver_binding % fence()
 
+      ! Wait for the inferer to process the input data and send back the results
       call solver_binding % fence()
 
       if (driver_config%iverbose >= 4) then
@@ -361,10 +367,10 @@ program ecrad_driver
 
   is_out_of_bounds = flux % out_of_physical_bounds(driver_config % istartcol, driver_config % iendcol)
 
-  flux % lw_up(1,:) = flux % lw_up(col_number,:) + 1/2 * (solver_buffer(1) % delta_lw_add(:) - solver_buffer(1) % delta_lw_diff(:))
-  flux % lw_dn(1,:) = flux % lw_dn(col_number,:) + 1/2 * (solver_buffer(1) % delta_lw_add(:) + solver_buffer(1) % delta_lw_diff(:))
-  flux % sw_up(1,:) = flux % sw_up(col_number,:) + 1/2 * (solver_buffer(1) % delta_sw_add(:) - solver_buffer(1) % delta_sw_diff(:))
-  flux % sw_dn(1,:) = flux % sw_dn(col_number,:) + 1/2 * (solver_buffer(1) % delta_sw_add(:) + solver_buffer(1) % delta_sw_diff(:))
+  flux % lw_up(1,:) = flux % lw_up(istartcol + jblock - 1,:) + 1/2 * (solver_buffer(1) % delta_lw_add(:) - solver_buffer(1) % delta_lw_diff(:))
+  flux % lw_dn(1,:) = flux % lw_dn(istartcol + jblock - 1,:) + 1/2 * (solver_buffer(1) % delta_lw_add(:) + solver_buffer(1) % delta_lw_diff(:))
+  flux % sw_up(1,:) = flux % sw_up(istartcol + jblock - 1,:) + 1/2 * (solver_buffer(1) % delta_sw_add(:) - solver_buffer(1) % delta_sw_diff(:))
+  flux % sw_dn(1,:) = flux % sw_dn(istartcol + jblock - 1,:) + 1/2 * (solver_buffer(1) % delta_sw_add(:) + solver_buffer(1) % delta_sw_diff(:))
 
   write(rank_string,'(I4)') solver_binding % rank
   output_file_name = file_name(1:len(trim(file_name)))//'_'//rank_string
