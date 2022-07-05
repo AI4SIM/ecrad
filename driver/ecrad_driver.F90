@@ -466,7 +466,7 @@ program ecrad_driver
       solver_data(jblock) = solver_output
     end do
 
-    if(solver_binding % rank == 1)
+    if(solver_binding % rank == 1) then
       write(*,*) solver_data
     end if
 
