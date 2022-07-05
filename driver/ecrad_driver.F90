@@ -79,8 +79,24 @@ program ecrad_driver
 
   ! For parallel processing of multiple blocks
   integer :: jblock, nblock ! Block loop index and number
+
+#ifndef NO_OPENMP
+  ! OpenMP functions
   integer, external :: omp_get_thread_num
-  double precision, external :: omp_get_wtime
+  real(kind=jprd), external :: omp_get_wtime
+  ! Start/stop time in seconds
+  real(kind=jprd) :: tstart, tstop
+#endif
+
+  ! For demonstration of get_sw_weights later on
+  ! Ultraviolet weightings
+  !integer    :: nweight_uv
+  !integer    :: iband_uv(100)
+  !real(jprb) :: weight_uv(100)
+  ! Photosynthetically active radiation weightings
+  !integer    :: nweight_par
+  !integer    :: iband_par(100)
+  !real(jprb) :: weight_par(100)
 
   ! Loop index for repeats (for benchmarking)
   integer :: jrepeat
@@ -149,6 +165,17 @@ program ecrad_driver
   !     &  [8.0e-6_jprb, 13.0e-6_jprb], [1,2,1], &
   !     &   do_nearest=.false.)
 
+  ! If monochromatic aerosol properties are required, then the
+  ! wavelengths can be specified (in metres) as follows - these can be
+  ! whatever you like for the general aerosol optics, but must match
+  ! the monochromatic values in the aerosol input file for the older
+  ! aerosol optics
+  !call config%set_aerosol_wavelength_mono( &
+  !     &  [3.4e-07_jprb, 3.55e-07_jprb, 3.8e-07_jprb, 4.0e-07_jprb, 4.4e-07_jprb, &
+  !     &   4.69e-07_jprb, 5.0e-07_jprb, 5.32e-07_jprb, 5.5e-07_jprb, 6.45e-07_jprb, &
+  !     &   6.7e-07_jprb, 8.0e-07_jprb, 8.58e-07_jprb, 8.65e-07_jprb, 1.02e-06_jprb, &
+  !     &   1.064e-06_jprb, 1.24e-06_jprb, 1.64e-06_jprb, 2.13e-06_jprb, 1.0e-05_jprb])
+
   ! Setup the radiation scheme: load the coefficients for gas and
   ! cloud optics, currently from RRTMG
   call setup_radiation(config)
@@ -156,6 +183,19 @@ program ecrad_driver
   ! Initialize AI4Sim binding
   call solver_binding % initialize()
 
+  ! Demonstration of how to get weights for UV and PAR fluxes
+  !if (config%do_sw) then
+  !  call config%get_sw_weights(0.2e-6_jprb, 0.4415e-6_jprb,&
+  !       &  nweight_uv, iband_uv, weight_uv,&
+  !       &  'ultraviolet')
+  !  call config%get_sw_weights(0.4e-6_jprb, 0.7e-6_jprb,&
+  !       &  nweight_par, iband_par, weight_par,&
+  !       &  'photosynthetically active radiation, PAR')
+  !end if
+
+  if (driver_config%do_save_aerosol_optics) then
+    call config%aerosol_optics%save('aerosol_optics.nc', iverbose=driver_config%iverbose)
+  end if
 
   ! --------------------------------------------------------
   ! Section 3: Read input data file
@@ -260,6 +300,9 @@ program ecrad_driver
   
   ! Option of repeating calculation multiple time for more accurate
   ! profiling
+#ifndef NO_OPENMP
+  tstart = omp_get_wtime() 
+#endif
   do jrepeat = 1,driver_config%nrepeat
     
     if (driver_config%do_parallel) then
@@ -269,7 +312,6 @@ program ecrad_driver
       nblock = (driver_config%iendcol - driver_config%istartcol &
            &  + driver_config%nblocksize) / driver_config%nblocksize
      
-      tstart = omp_get_wtime() 
       !$OMP PARALLEL DO PRIVATE(istartcol, iendcol) SCHEDULE(RUNTIME)
       do jblock = 1, nblock
         ! Specify the range of columns to process.
@@ -279,8 +321,12 @@ program ecrad_driver
              &        driver_config%iendcol)
           
         if (driver_config%iverbose >= 3) then
+#ifndef NO_OPENMP
           write(nulout,'(a,i0,a,i0,a,i0)')  'Thread ', omp_get_thread_num(), &
                &  ' processing columns ', istartcol, '-', iendcol
+#else
+          write(nulout,'(a,i0,a,i0)')  'Processing columns ', istartcol, '-', iendcol
+#endif
         end if
         
         ! Call the ECRAD radiation scheme
@@ -289,8 +335,6 @@ program ecrad_driver
         
       end do
       !$OMP END PARALLEL DO
-      tstop = omp_get_wtime()
-      write(nulout, '(a,g11.5,a)') 'Time elapsed in radiative transfer: ', tstop-tstart, ' seconds'
       
     else
       istartcol = solver_binding % rank * driver_config % nblocksize + 1
@@ -359,36 +403,41 @@ program ecrad_driver
         write(*, *) 'I->S    ', solver_buffer(1) % delta_lw_add
       end if
 
-      ! --------------------------------------------------------
-      ! Section 5: Check and save output
-      ! --------------------------------------------------------
+#ifndef NO_OPENMP
+  tstop = omp_get_wtime()
+  write(nulout, '(a,g11.5,a)') 'Time elapsed in radiative transfer: ', tstop-tstart, ' seconds'
+#endif
 
-      is_out_of_bounds = flux % out_of_physical_bounds(driver_config % istartcol, driver_config % iendcol)
+  ! --------------------------------------------------------
+  ! Section 5: Check and save output
+  ! --------------------------------------------------------
 
-      do jblock = 1, driver_config % nblocksize
-        flux % lw_up(istartcol + jblock - 1,:) = flux % lw_up(istartcol + jblock - 1,:) &
-              & + 1/2 * (solver_buffer(1) % delta_lw_add(:) - solver_buffer(1) % delta_lw_diff(:))
-        flux % lw_dn(istartcol + jblock - 1,:) = flux % lw_dn(istartcol + jblock - 1,:) &
-                & + 1/2 * (solver_buffer(1) % delta_lw_add(:) + solver_buffer(1) % delta_lw_diff(:))
-        flux % sw_up(istartcol + jblock - 1,:) = flux % sw_up(istartcol + jblock - 1,:) &
-                & + 1/2 * (solver_buffer(1) % delta_sw_add(:) - solver_buffer(1) % delta_sw_diff(:))
-        flux % sw_dn(istartcol + jblock - 1,:) = flux % sw_dn(istartcol + jblock - 1,:) &
-                & + 1/2 * (solver_buffer(1) % delta_sw_add(:) + solver_buffer(1) % delta_sw_diff(:))
-      end do
-    end if
+  is_out_of_bounds = flux%out_of_physical_bounds(driver_config%istartcol, driver_config%iendcol)
 
-    write(rank_string,'(I4)') solver_binding % rank
-    output_file_name = file_name(1:len(trim(file_name)))//'_'//rank_string
+    do jblock = 1, driver_config % nblocksize
+      flux % lw_up(istartcol + jblock - 1,:) = flux % lw_up(istartcol + jblock - 1,:) &
+            & + 1/2 * (solver_buffer(1) % delta_lw_add(:) - solver_buffer(1) % delta_lw_diff(:))
+      flux % lw_dn(istartcol + jblock - 1,:) = flux % lw_dn(istartcol + jblock - 1,:) &
+              & + 1/2 * (solver_buffer(1) % delta_lw_add(:) + solver_buffer(1) % delta_lw_diff(:))
+      flux % sw_up(istartcol + jblock - 1,:) = flux % sw_up(istartcol + jblock - 1,:) &
+              & + 1/2 * (solver_buffer(1) % delta_sw_add(:) - solver_buffer(1) % delta_sw_diff(:))
+      flux % sw_dn(istartcol + jblock - 1,:) = flux % sw_dn(istartcol + jblock - 1,:) &
+              & + 1/2 * (solver_buffer(1) % delta_sw_add(:) + solver_buffer(1) % delta_sw_diff(:))
+    end do
+  end if
 
-    ! Store the fluxes in the output file
-    call save_fluxes(output_file_name, config, thermodynamics, flux, &
-         &   iverbose=driver_config % iverbose, is_hdf5_file = driver_config % do_write_hdf5, &
-         &   experiment_name = driver_config % experiment_name, &
-         &   is_double_precision = driver_config % do_write_double_precision)
+  write(rank_string,'(I4)') solver_binding % rank
+  output_file_name = file_name(1:len(trim(file_name)))//'_'//rank_string
 
-    if (driver_config % iverbose >= 2) then
-      write(nulout,'(a)') '------------------------------------------------------------------------------------'
-    end if
+  ! Store the fluxes in the output file
+  call save_fluxes(file_name, config, thermodynamics, flux, &
+       &   iverbose=driver_config%iverbose, is_hdf5_file=driver_config%do_write_hdf5, &
+       &   experiment_name=driver_config%experiment_name, &
+       &   is_double_precision=driver_config%do_write_double_precision)
+    
+  if (driver_config%iverbose >= 2) then
+    write(nulout,'(a)') '------------------------------------------------------------------------------------'
+  end if
 
     do jblock = 1, driver_config % nblocksize
       solver_output % skin_temperature = 0
