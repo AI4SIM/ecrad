@@ -88,6 +88,10 @@ contains
       call SRTM_INIT(directory)
     end if
 
+    ! Cloud and aerosol properties can only be defined per band
+    config%do_cloud_aerosol_per_sw_g_point = .false.
+    config%do_cloud_aerosol_per_lw_g_point = .false.
+
     config%n_g_sw = jpgsw
     config%n_g_lw = jpglw
     config%n_bands_sw = 14
@@ -96,18 +100,16 @@ contains
     ! Wavenumber ranges of each band may be needed so that the user
     ! can compute UV and photosynthetically active radiation for a
     ! particular wavelength range
-    allocate(config%wavenumber1_sw(config%n_bands_sw))
-    allocate(config%wavenumber2_sw(config%n_bands_sw))
-    allocate(config%wavenumber1_lw(config%n_bands_lw))
-    allocate(config%wavenumber2_lw(config%n_bands_lw))
-    config%wavenumber1_lw = (/ 10, 350, 500, 630, 700, 820, 980, 1080, 1180, 1390, 1480, &
-         &  1800, 2080, 2250, 2380, 2600 /)
-    config%wavenumber2_lw = (/ 350, 500, 630, 700, 820, 980, 1080, 1180, 1390, 1480, 1800, &
-         &  2080, 2250, 2380, 2600, 3250 /)
-    config%wavenumber1_sw = (/ 2600, 3250, 4000, 4650, 5150, 6150, 7700, 8050, 12850, &
-         &  16000 , 22650, 29000, 38000, 820 /)
-    config%wavenumber2_sw = (/ 3250, 4000, 4650, 5150, 6150, 7700, 8050, 12850, 16000, &
-         &  22650, 29000, 38000, 50000, 2600 /)
+    call config%gas_optics_sw%spectral_def%allocate_bands_only( &
+         &  [2600.0_jprb, 3250.0_jprb, 4000.0_jprb, 4650.0_jprb, 5150.0_jprb, 6150.0_jprb, 7700.0_jprb, &
+         &   8050.0_jprb, 12850.0_jprb, 16000.0_jprb, 22650.0_jprb, 29000.0_jprb, 38000.0_jprb, 820.0_jprb], &
+         &  [3250.0_jprb, 4000.0_jprb, 4650.0_jprb, 5150.0_jprb, 6150.0_jprb, 7700.0_jprb, 8050.0_jprb, &
+         &   12850.0_jprb, 16000.0_jprb, 22650.0_jprb, 29000.0_jprb, 38000.0_jprb, 50000.0_jprb, 2600.0_jprb])
+    call config%gas_optics_lw%spectral_def%allocate_bands_only( &
+         &  [10.0_jprb, 350.0_jprb, 500.0_jprb, 630.0_jprb, 700.0_jprb, 820.0_jprb, 980.0_jprb, 1080.0_jprb, &
+         &   1180.0_jprb, 1390.0_jprb, 1480.0_jprb, 1800.0_jprb, 2080.0_jprb, 2250.0_jprb, 2380.0_jprb, 2600.0_jprb], &
+         &  [350.0_jprb, 500.0_jprb, 630.0_jprb, 700.0_jprb, 820.0_jprb, 980.0_jprb, 1080.0_jprb, 1180.0_jprb, &
+         &   1390.0_jprb, 1480.0_jprb, 1800.0_jprb, 2080.0_jprb, 2250.0_jprb, 2380.0_jprb, 2600.0_jprb, 3250.0_jprb])
 
     allocate(config%i_band_from_g_sw          (config%n_g_sw))
     allocate(config%i_band_from_g_lw          (config%n_g_lw))
@@ -359,12 +361,16 @@ contains
 !      YRDIMV%NFLEVG = nlev
 !    end if
 
-    pressure_fl(istartcol:iendcol,:) &
-         &  = 0.5_jprb * (thermodynamics%pressure_hl(istartcol:iendcol,istartlev:iendlev) &
-         &               +thermodynamics%pressure_hl(istartcol:iendcol,istartlev+1:iendlev+1))
-    temperature_fl(istartcol:iendcol,:) &
-         &  = 0.5_jprb * (thermodynamics%temperature_hl(istartcol:iendcol,istartlev:iendlev) &
-         &               +thermodynamics%temperature_hl(istartcol:iendcol,istartlev+1:iendlev+1))
+    do jlev=1,nlev
+      do jcol= istartcol,iendcol
+        pressure_fl(jcol,jlev) &
+            &  = 0.5_jprb * (thermodynamics%pressure_hl(jcol,jlev+istartlev-1) &
+            &               +thermodynamics%pressure_hl(jcol,jlev+istartlev))
+        temperature_fl(jcol,jlev) &
+            &  = 0.5_jprb * (thermodynamics%temperature_hl(jcol,jlev+istartlev-1) &
+            &               +thermodynamics%temperature_hl(jcol,jlev+istartlev))
+      end do
+    end do
     
     ! Check we have gas mixing ratios in the right units
     call gas%assert_units(IMassMixingRatio)
@@ -401,7 +407,7 @@ contains
          &  ZRAT_H2ON2O, ZRAT_H2ON2O_1, ZRAT_H2OCH4, ZRAT_H2OCH4_1, &
          &  ZRAT_N2OCO2, ZRAT_N2OCO2_1, ZRAT_O3CO2, ZRAT_O3CO2_1)   
 
-    ZTAUAERL = 0.0_jprb
+    ZTAUAERL(istartcol:iendcol,:,:) = 0.0_jprb
 
     CALL RRTM_GAS_OPTICAL_DEPTH &
          &( istartcol, iendcol, nlev, ZOD_LW, ZPAVEL, ZCOLDRY, ZCOLBRD, ZWX ,&
@@ -433,7 +439,7 @@ contains
         ! the surface
         lw_emission = lw_emission * (1.0_jprb - lw_albedo)
       else
-      ! Longwave emission has already been computed
+        ! Longwave emission has already been computed
         if (config%use_canopy_full_spectrum_lw) then
           lw_emission = transpose(single_level%lw_emission(istartcol:iendcol,:))
         else
@@ -508,21 +514,25 @@ contains
     
     ! Scale the incoming solar per band, if requested
     if (config%use_spectral_solar_scaling) then
-      ZINCSOL(istartcol:iendcol,:) = ZINCSOL(istartcol:iendcol,:) &
-         & * spread(single_level%spectral_solar_scaling(config%i_band_from_reordered_g_sw), &
-         &                                              1,iendcol-istartcol+1)
+      do jg = 1,JPGPT_SW
+        do jcol = istartcol,iendcol 
+          ZINCSOL(jcol,jg) = ZINCSOL(jcol,jg) * &
+            &   single_level%spectral_solar_scaling(config%i_band_from_reordered_g_sw(jg))
+        end do
+      end do
     end if
 
     ! Scaling factor to ensure that the total solar irradiance is as
     ! requested.  Note that if the sun is below the horizon then
     ! ZINCSOL will be zero.
     if (present(incoming_sw)) then
-      incoming_sw_scale = 1.0_jprb
       do jcol = istartcol,iendcol
         if (single_level%cos_sza(jcol) > 0.0_jprb) then
 ! Added for DWD (2020)
 !NEC$ nounroll
           incoming_sw_scale(jcol) = single_level%solar_irradiance / sum(ZINCSOL(jcol,:))
+        else
+          incoming_sw_scale(jcol) = 1.0_jprb
         end if
       end do
     end if

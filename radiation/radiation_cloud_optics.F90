@@ -18,6 +18,7 @@
 module radiation_cloud_optics
 
   implicit none
+
   public
 
 contains
@@ -344,10 +345,12 @@ contains
               call radiation_abort()
             end if
 
+            ! Delta-Eddington scaling in the shortwave only
             if (.not. config%do_sw_delta_scaling_with_gases) then
-              ! Delta-Eddington scaling in the shortwave only
               call delta_eddington_scat_od(od_sw_liq, scat_od_sw_liq, g_sw_liq)
             end if
+            !call delta_eddington_scat_od(od_lw_liq, scat_od_lw_liq, g_lw_liq)
+
           else
             ! Liquid not present: set properties to zero
             od_lw_liq = 0.0_jprb
@@ -436,14 +439,14 @@ contains
               call radiation_abort()
             end if
 
+            ! Delta-Eddington scaling in both longwave and shortwave
+            ! (assume that particles are larger than wavelength even
+            ! in longwave)
             if (.not. config%do_sw_delta_scaling_with_gases) then
-              ! Delta-Eddington scaling in both longwave and shortwave
-              ! (assume that particles are larger than wavelength even
-              ! in longwave)
               call delta_eddington_scat_od(od_sw_ice, scat_od_sw_ice, g_sw_ice)
             end if
-
             call delta_eddington_scat_od(od_lw_ice, scat_od_lw_ice, g_lw_ice)
+
           else
             ! Ice not present: set properties to zero
             od_lw_ice = 0.0_jprb
@@ -477,8 +480,10 @@ contains
             ! to the absorption optical depth
 ! Added for DWD (2020)
 !NEC$ shortloop
-            od_lw_cloud(:,jlev,jcol) = od_lw_liq - scat_od_lw_liq &
-                 &                   + od_lw_ice - scat_od_lw_ice
+            do jb = 1, config%n_bands_lw
+              od_lw_cloud(jb,jlev,jcol) = od_lw_liq(jb) - scat_od_lw_liq(jb) &
+                    &                   + od_lw_ice(jb) - scat_od_lw_ice(jb)
+            end do
           end if
 ! Added for DWD (2020)
 !NEC$ shortloop
