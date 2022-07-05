@@ -409,32 +409,32 @@ program ecrad_driver
   ! Section 5: Check and save output
   ! --------------------------------------------------------
 
-  is_out_of_bounds = flux%out_of_physical_bounds(driver_config%istartcol, driver_config%iendcol)
+      is_out_of_bounds = flux%out_of_physical_bounds(driver_config%istartcol, driver_config%iendcol)
 
-    do jblock = 1, driver_config % nblocksize
-      flux % lw_up(istartcol + jblock - 1,:) = flux % lw_up(istartcol + jblock - 1,:) &
-            & + 1/2 * (solver_buffer(1) % delta_lw_add(:) - solver_buffer(1) % delta_lw_diff(:))
-      flux % lw_dn(istartcol + jblock - 1,:) = flux % lw_dn(istartcol + jblock - 1,:) &
-              & + 1/2 * (solver_buffer(1) % delta_lw_add(:) + solver_buffer(1) % delta_lw_diff(:))
-      flux % sw_up(istartcol + jblock - 1,:) = flux % sw_up(istartcol + jblock - 1,:) &
-              & + 1/2 * (solver_buffer(1) % delta_sw_add(:) - solver_buffer(1) % delta_sw_diff(:))
-      flux % sw_dn(istartcol + jblock - 1,:) = flux % sw_dn(istartcol + jblock - 1,:) &
-              & + 1/2 * (solver_buffer(1) % delta_sw_add(:) + solver_buffer(1) % delta_sw_diff(:))
-    end do
-  end if
+      do jblock = 1, driver_config % nblocksize
+        flux % lw_up(istartcol + jblock - 1,:) = flux % lw_up(istartcol + jblock - 1,:) &
+              & + 1/2 * (solver_buffer(1) % delta_lw_add(:) - solver_buffer(1) % delta_lw_diff(:))
+        flux % lw_dn(istartcol + jblock - 1,:) = flux % lw_dn(istartcol + jblock - 1,:) &
+                & + 1/2 * (solver_buffer(1) % delta_lw_add(:) + solver_buffer(1) % delta_lw_diff(:))
+        flux % sw_up(istartcol + jblock - 1,:) = flux % sw_up(istartcol + jblock - 1,:) &
+                & + 1/2 * (solver_buffer(1) % delta_sw_add(:) - solver_buffer(1) % delta_sw_diff(:))
+        flux % sw_dn(istartcol + jblock - 1,:) = flux % sw_dn(istartcol + jblock - 1,:) &
+                & + 1/2 * (solver_buffer(1) % delta_sw_add(:) + solver_buffer(1) % delta_sw_diff(:))
+      end do
+    end if
 
-  write(rank_string,'(I4)') solver_binding % rank
-  output_file_name = file_name(1:len(trim(file_name)))//'_'//rank_string
+    !write(rank_string,'(I4)') solver_binding % rank
+    !output_file_name = file_name(1:len(trim(file_name)))//'_'//rank_string
 
-  ! Store the fluxes in the output file
-  call save_fluxes(file_name, config, thermodynamics, flux, &
-       &   iverbose=driver_config%iverbose, is_hdf5_file=driver_config%do_write_hdf5, &
-       &   experiment_name=driver_config%experiment_name, &
-       &   is_double_precision=driver_config%do_write_double_precision)
-    
-  if (driver_config%iverbose >= 2) then
-    write(nulout,'(a)') '------------------------------------------------------------------------------------'
-  end if
+    ! Store the fluxes in the output file
+    !call save_fluxes(file_name, config, thermodynamics, flux, &
+    !     &   iverbose=driver_config%iverbose, is_hdf5_file=driver_config%do_write_hdf5, &
+    !     &   experiment_name=driver_config%experiment_name, &
+    !     &   is_double_precision=driver_config%do_write_double_precision)
+
+    if (driver_config%iverbose >= 2) then
+      write(nulout,'(a)') '------------------------------------------------------------------------------------'
+    end if
 
     do jblock = 1, driver_config % nblocksize
       solver_output % skin_temperature = 0
@@ -465,6 +465,10 @@ program ecrad_driver
 
       solver_data(jblock) = solver_output
     end do
+
+    if(solver_binding % rank == 1)
+      write(*,*) solver_data
+    end if
 
     call solver_binding % put(solver_data, factory, solver_binding % mpi_size - 1)
 
