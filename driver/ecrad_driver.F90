@@ -107,9 +107,6 @@ program ecrad_driver
 !  integer    :: iband(20), nweights
 !  real(jprb) :: weight(20)
 
-  ! Start/stop time in seconds
-  real(kind=jprd) :: tstart, tstop
-
   ! AI4Sim binding
   type(factory_type)                     :: factory
   type(ecrad_output_type)                :: solver_output
