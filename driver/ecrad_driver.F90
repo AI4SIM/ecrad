@@ -344,9 +344,6 @@ program ecrad_driver
           write(nulout,'(a,i0,a,i0)')  'Processing from column ', istartcol, ' to column ', iendcol
         end if
 
-        ! Call the ECRAD radiation scheme
-        call radiation(ncol, nlev, istartcol, iendcol, config, single_level, thermodynamics, gas, cloud, aerosol, flux)
-
         ! Create data structure for AI4Sim
         solver_output % skin_temperature = single_level % skin_temperature(istartcol + jblock - 1)
         solver_output % cos_solar_zenith_angle = single_level % cos_sza(istartcol + jblock - 1)
@@ -384,6 +381,9 @@ program ecrad_driver
 
       ! Wait for all the ecrad process to write into the inferer buffer
       call solver_binding % fence()
+
+      ! Call the ECRAD radiation scheme
+      call radiation(ncol, nlev, istartcol, iendcol, config, single_level, thermodynamics, gas, cloud, aerosol, flux)
 
       ! Wait for the inferer to process the input data and send back the results
       call solver_binding % fence()
