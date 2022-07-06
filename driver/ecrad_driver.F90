@@ -436,42 +436,9 @@ program ecrad_driver
       write(nulout,'(a)') '------------------------------------------------------------------------------------'
     end if
 
-    do jblock = 1, driver_config % nblocksize
-      solver_output % skin_temperature = 0
-      solver_output % cos_solar_zenith_angle = 0
-      solver_output % sw_albedo(:) = 0
-      solver_output % sw_albedo_direct(:) = 0
-      solver_output % lw_emissivity(:) = 0
-      solver_output % solar_irradiance = 0
-      solver_output % q(:) = 0
-      solver_output % o3_mmr(:) = 0
-      solver_output % co2_vmr(:) = 0
-      solver_output % n2o_vmr(:) = 0
-      solver_output % ch4_vmr(:) = 0
-      solver_output % o2_vmr(:) = 0
-      solver_output % cfc11_vmr(:) = 0
-      solver_output % cfc12_vmr(:) = 0
-      solver_output % hcfc22_vmr(:) = 0
-      solver_output % ccl4_vmr(:) = 0
-      solver_output % cloud_fraction(:) = 0
-      solver_output % aerosol_mmr(:,:) = 0
-      solver_output % q_liquid(:) = 0
-      solver_output % q_ice(:) = 0
-      solver_output % re_liquid(:) = 0
-      solver_output % re_ice(:) = 0
-      solver_output % temperature_hl(:) = 0
-      solver_output % pressure_hl(:) = 0
-      solver_output % overlap_param(:) = 0
-
-      solver_data(jblock) = solver_output
-    end do
-
-    if(solver_binding % rank == 1) then
-      write(*,*) solver_data
-    end if
-
-    call solver_binding % put(solver_data, factory, solver_binding % mpi_size - 1)
-
+    call date_and_time(values=dt)
+    write(*, '(i4, 5(a, i2.2), a, i3.3, a)') dt(1), '-', dt(2), '-', dt(3), ' ', dt(5), ':', dt(6), ':', dt(7), ',', dt(8), &
+            & ' -- root -- INFO -- [SOLVER ] Fencing to finalize.'
     call solver_binding % fence()
 
     deallocate(solver_buffer)
