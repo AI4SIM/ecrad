@@ -118,7 +118,7 @@ program ecrad_driver
   integer                                :: dt(8)
   character(len=4)                       :: rank_string
   character(len=512)                     :: output_file_name
-
+  integer                                :: extension_index
 
   ! --------------------------------------------------------
   ! Section 2: Configure
@@ -423,14 +423,16 @@ program ecrad_driver
       end do
     end if
 
-    !write(rank_string,'(I4)') solver_binding % rank
-    !output_file_name = file_name(1:len(trim(file_name)))//'_'//rank_string
+    write(rank_string,'(I4)') solver_binding % rank
+    file_name = trim(file_name)
+    extension_index = index(file_name, ".")
+    output_file_name = file_name(1:extension_index-1)//'_'//trim(adjustl(rank_string))//file_name(extension_index:len(file_name))
 
     ! Store the fluxes in the output file
-    !call save_fluxes(file_name, config, thermodynamics, flux, &
-    !     &   iverbose=driver_config%iverbose, is_hdf5_file=driver_config%do_write_hdf5, &
-    !     &   experiment_name=driver_config%experiment_name, &
-    !     &   is_double_precision=driver_config%do_write_double_precision)
+    call save_fluxes(output_file_name, config, thermodynamics, flux, &
+         &   iverbose=driver_config%iverbose, is_hdf5_file=driver_config%do_write_hdf5, &
+         &   experiment_name=driver_config%experiment_name, &
+         &   is_double_precision=driver_config%do_write_double_precision)
 
     if (driver_config%iverbose >= 2) then
       write(nulout,'(a)') '------------------------------------------------------------------------------------'
