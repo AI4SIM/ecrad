@@ -400,17 +400,7 @@ program ecrad_driver
         write(*, *) 'I->S    ', solver_buffer(1) % delta_lw_add
       end if
 
-#ifndef NO_OPENMP
-  tstop = omp_get_wtime()
-  write(nulout, '(a,g11.5,a)') 'Time elapsed in radiative transfer: ', tstop-tstart, ' seconds'
-#endif
-
-  ! --------------------------------------------------------
-  ! Section 5: Check and save output
-  ! --------------------------------------------------------
-
-      is_out_of_bounds = flux%out_of_physical_bounds(driver_config%istartcol, driver_config%iendcol)
-
+      ! Correct the radiative scheme results with the NN results
       do jblock = 1, driver_config % nblocksize
         flux % lw_up(istartcol + jblock - 1,:) = flux % lw_up(istartcol + jblock - 1,:) &
               & + 1/2 * (solver_buffer(1) % delta_lw_add(:) - solver_buffer(1) % delta_lw_diff(:))
@@ -423,6 +413,18 @@ program ecrad_driver
       end do
     end if
 
+#ifndef NO_OPENMP
+    tstop = omp_get_wtime()
+    write(nulout, '(a,g11.5,a)') 'Time elapsed in radiative transfer: ', tstop-tstart, ' seconds'
+#endif
+
+    ! --------------------------------------------------------
+    ! Section 5: Check and save output
+    ! --------------------------------------------------------
+
+    is_out_of_bounds = flux%out_of_physical_bounds(driver_config%istartcol, driver_config%iendcol)
+
+    ! Generate the output file name
     write(rank_string,'(I4)') solver_binding % rank
     file_name = trim(file_name)
     extension_index = index(file_name, ".")
