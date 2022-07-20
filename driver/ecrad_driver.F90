@@ -337,13 +337,12 @@ program ecrad_driver
       istartcol = solver_binding % rank * driver_config % nblocksize + 1
       iendcol = (solver_binding % rank + 1) * driver_config % nblocksize
 
-      do jblock = 1, driver_config % nblocksize
-        ! Run radiation scheme serially
-        if (driver_config%iverbose >= 3) then
-          write(nulout,'(a,i0,a)')  'Processing ', ncol, ' columns'
-          write(nulout,'(a,i0,a,i0)')  'Processing from column ', istartcol, ' to column ', iendcol
-        end if
+      if (driver_config%iverbose >= 3) then
+        write(nulout,'(a,i0,a)')  'Processing ', (iendcol - istartcol + 1), ' columns'
+        write(nulout,'(a,i0,a,i0)')  'Processing from column ', istartcol - 1, ' to column ', iendcol
+      end if
 
+      do jblock = 1, driver_config % nblocksize
         ! Create data structure for AI4Sim
         solver_output % skin_temperature = single_level % skin_temperature(istartcol + jblock - 1)
         solver_output % cos_solar_zenith_angle = single_level % cos_sza(istartcol + jblock - 1)
@@ -401,6 +400,9 @@ program ecrad_driver
       end if
 
       ! Correct the radiative scheme results with the NN results
+      if (driver_config%iverbose >= 3) then
+        write(nulout,'(a,i0,a,i0)')  'Correct the radiative scheme results with the NN results.'
+      end if
       do jblock = 1, driver_config % nblocksize
         flux % lw_up(istartcol + jblock - 1,:) = flux % lw_up(istartcol + jblock - 1,:) &
               & + 1/2 * (solver_buffer(1) % delta_lw_add(:) - solver_buffer(1) % delta_lw_diff(:))
