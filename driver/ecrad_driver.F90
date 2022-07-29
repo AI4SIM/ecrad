@@ -405,13 +405,13 @@ program ecrad_driver
       end if
       do jblock = 1, driver_config % nblocksize
         flux % lw_up(istartcol + jblock - 1,:) = flux % lw_up(istartcol + jblock - 1,:) &
-              & + 1/2 * (solver_buffer(1) % delta_lw_add(:) - solver_buffer(1) % delta_lw_diff(:))
+              & + (solver_buffer(jblock) % delta_lw_add(:) - solver_buffer(jblock) % delta_lw_diff(:)) / 2
         flux % lw_dn(istartcol + jblock - 1,:) = flux % lw_dn(istartcol + jblock - 1,:) &
-                & + 1/2 * (solver_buffer(1) % delta_lw_add(:) + solver_buffer(1) % delta_lw_diff(:))
+                & + (solver_buffer(jblock) % delta_lw_add(:) + solver_buffer(jblock) % delta_lw_diff(:)) /2
         flux % sw_up(istartcol + jblock - 1,:) = flux % sw_up(istartcol + jblock - 1,:) &
-                & + 1/2 * (solver_buffer(1) % delta_sw_add(:) - solver_buffer(1) % delta_sw_diff(:))
+                & + (solver_buffer(jblock) % delta_sw_add(:) - solver_buffer(jblock) % delta_sw_diff(:)) / 2
         flux % sw_dn(istartcol + jblock - 1,:) = flux % sw_dn(istartcol + jblock - 1,:) &
-                & + 1/2 * (solver_buffer(1) % delta_sw_add(:) + solver_buffer(1) % delta_sw_diff(:))
+                & + (solver_buffer(jblock) % delta_sw_add(:) + solver_buffer(jblock) % delta_sw_diff(:)) / 2
       end do
     end if
 
