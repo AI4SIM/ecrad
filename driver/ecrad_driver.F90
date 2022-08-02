@@ -266,6 +266,44 @@ program ecrad_driver
   ! Section 4: Call radiation scheme
   ! --------------------------------------------------------
 
+  ! If we use it, set the input of the inferer before they will be modiified by eCrad preprocessing.
+  if (.not.(driver_config%do_parallel)) then
+      istartcol = solver_binding % rank * driver_config % nblocksize + 1
+
+      do jblock = 1, driver_config % nblocksize
+        ! Create data structure for AI4Sim
+        solver_output % skin_temperature = single_level % skin_temperature(istartcol + jblock - 1)
+        solver_output % cos_solar_zenith_angle = single_level % cos_sza(istartcol + jblock - 1)
+        solver_output % sw_albedo = (/single_level % sw_albedo(istartcol + jblock - 1,:)/)
+        solver_output % sw_albedo_direct = (/single_level % sw_albedo_direct(istartcol + jblock - 1,:)/)
+        solver_output % lw_emissivity = (/single_level % lw_emissivity(istartcol + jblock - 1,:)/)
+        solver_output % solar_irradiance = single_level % solar_irradiance
+        solver_output % q = (/gas % mixing_ratio(istartcol + jblock - 1,:,1)/)
+        solver_output % o3_mmr = (/gas % mixing_ratio(istartcol + jblock - 1,:,3)/)
+        solver_output % co2_vmr = (/gas % mixing_ratio(istartcol + jblock - 1,:,2)/)
+        solver_output % n2o_vmr = (/gas % mixing_ratio(istartcol + jblock - 1,:,4)/)
+        solver_output % ch4_vmr = (/gas % mixing_ratio(istartcol + jblock - 1,:,6)/)
+        solver_output % o2_vmr = (/gas % mixing_ratio(istartcol + jblock - 1,:,7)/)
+        solver_output % cfc11_vmr = (/gas % mixing_ratio(istartcol + jblock - 1,:,8)/)
+        solver_output % cfc12_vmr = (/gas % mixing_ratio(istartcol + jblock - 1,:,9)/)
+        solver_output % hcfc22_vmr = (/gas % mixing_ratio(istartcol + jblock - 1,:,10)/)
+        solver_output % ccl4_vmr = (/gas % mixing_ratio(istartcol + jblock - 1,:,11)/)
+        solver_output % cloud_fraction = (/cloud % fraction(istartcol + jblock - 1,:)/)
+        solver_output % aerosol_mmr = reshape((/aerosol % mixing_ratio(istartcol + jblock - 1,:,:)/), &
+                & shape(solver_output % aerosol_mmr))
+        solver_output % q_liquid = (/cloud % q_liq(istartcol + jblock - 1,:)/)
+        solver_output % q_ice = (/cloud % q_ice(istartcol + jblock - 1,:)/)
+        solver_output % re_liquid = (/cloud % re_liq(istartcol + jblock - 1,:)/)
+        solver_output % re_ice = (/cloud % re_ice(istartcol + jblock - 1,:)/)
+        solver_output % temperature_hl = (/thermodynamics % temperature_hl(istartcol + jblock - 1,:)/)
+        solver_output % pressure_hl = (/thermodynamics % pressure_hl(istartcol + jblock - 1,:)/)
+        solver_output % overlap_param = (/cloud % overlap_param(istartcol + jblock - 1,:)/)
+
+        ! Add data structure to the array
+        solver_data(jblock) = solver_output
+      end do
+  end if
+
   ! Ensure the units of the gas mixing ratios are what is required
   ! by the gas absorption model
   call set_gas_units(config, gas)
@@ -334,46 +372,12 @@ program ecrad_driver
       !$OMP END PARALLEL DO
       
     else
-      istartcol = solver_binding % rank * driver_config % nblocksize + 1
       iendcol = (solver_binding % rank + 1) * driver_config % nblocksize
 
       if (driver_config%iverbose >= 3) then
         write(nulout,'(a,i0,a)')  'Processing ', (iendcol - istartcol + 1), ' columns'
         write(nulout,'(a,i0,a,i0)')  'Processing from column ', istartcol - 1, ' to column ', iendcol
       end if
-
-      do jblock = 1, driver_config % nblocksize
-        ! Create data structure for AI4Sim
-        solver_output % skin_temperature = single_level % skin_temperature(istartcol + jblock - 1)
-        solver_output % cos_solar_zenith_angle = single_level % cos_sza(istartcol + jblock - 1)
-        solver_output % sw_albedo = (/single_level % sw_albedo(istartcol + jblock - 1,:)/)
-        solver_output % sw_albedo_direct = (/single_level % sw_albedo_direct(istartcol + jblock - 1,:)/)
-        solver_output % lw_emissivity = (/single_level % lw_emissivity(istartcol + jblock - 1,:)/)
-        solver_output % solar_irradiance = single_level % solar_irradiance
-        solver_output % q = (/gas % mixing_ratio(istartcol + jblock - 1,:,1)/)
-        solver_output % o3_mmr = (/gas % mixing_ratio(istartcol + jblock - 1,:,3)/)
-        solver_output % co2_vmr = (/gas % mixing_ratio(istartcol + jblock - 1,:,2)/)
-        solver_output % n2o_vmr = (/gas % mixing_ratio(istartcol + jblock - 1,:,4)/)
-        solver_output % ch4_vmr = (/gas % mixing_ratio(istartcol + jblock - 1,:,6)/)
-        solver_output % o2_vmr = (/gas % mixing_ratio(istartcol + jblock - 1,:,7)/)
-        solver_output % cfc11_vmr = (/gas % mixing_ratio(istartcol + jblock - 1,:,8)/)
-        solver_output % cfc12_vmr = (/gas % mixing_ratio(istartcol + jblock - 1,:,9)/)
-        solver_output % hcfc22_vmr = (/gas % mixing_ratio(istartcol + jblock - 1,:,10)/)
-        solver_output % ccl4_vmr = (/gas % mixing_ratio(istartcol + jblock - 1,:,11)/)
-        solver_output % cloud_fraction = (/cloud % fraction(istartcol + jblock - 1,:)/)
-        solver_output % aerosol_mmr = reshape((/aerosol % mixing_ratio(istartcol + jblock - 1,:,:)/), &
-                & shape(solver_output % aerosol_mmr))
-        solver_output % q_liquid = (/cloud % q_liq(istartcol + jblock - 1,:)/)
-        solver_output % q_ice = (/cloud % q_ice(istartcol + jblock - 1,:)/)
-        solver_output % re_liquid = (/cloud % re_liq(istartcol + jblock - 1,:)/)
-        solver_output % re_ice = (/cloud % re_ice(istartcol + jblock - 1,:)/)
-        solver_output % temperature_hl = (/thermodynamics % temperature_hl(istartcol + jblock - 1,:)/)
-        solver_output % pressure_hl = (/thermodynamics % pressure_hl(istartcol + jblock - 1,:)/)
-        solver_output % overlap_param = (/cloud % overlap_param(istartcol + jblock - 1,:)/)
-
-        ! Add data structure to the array
-        solver_data(jblock) = solver_output
-      end do
 
       ! Put data into the inferer buffer
       call solver_binding % put(solver_data, factory, solver_binding % mpi_size - 1)
@@ -390,13 +394,13 @@ program ecrad_driver
       if (driver_config%iverbose >= 4) then
         call date_and_time(values=dt)
         write(*, '(i4, 5(a, i2.2), a, i3.3, a)') dt(1), '-', dt(2), '-', dt(3), ' ', dt(5), ':', dt(6), ':', dt(7), ',', dt(8), &
-              & ' -- root -- INFO -- [SOLVER ] Getting results from inferer'
-        write(*, *) 'I->S    ', solver_buffer(1) % hr_sw
-        write(*, *) 'I->S    ', solver_buffer(1) % hr_lw
-        write(*, *) 'I->S    ', solver_buffer(1) % delta_sw_diff
-        write(*, *) 'I->S    ', solver_buffer(1) % delta_sw_add
-        write(*, *) 'I->S    ', solver_buffer(1) % delta_lw_diff
-        write(*, *) 'I->S    ', solver_buffer(1) % delta_lw_add
+              & ' -- root -- INFO -- [SOLVER ] Getting first column results from inferer'
+        write(*, *) 'I->S hr_sw         : ', solver_buffer(1) % hr_sw(:10)
+        write(*, *) 'I->S hr_lw         : ', solver_buffer(1) % hr_lw(:10)
+        write(*, *) 'I->S delta_sw_diff : ', solver_buffer(1) % delta_sw_diff(:10)
+        write(*, *) 'I->S delta_sw_add  : ', solver_buffer(1) % delta_sw_add(:10)
+        write(*, *) 'I->S delta_lw_diff : ', solver_buffer(1) % delta_lw_diff(:10)
+        write(*, *) 'I->S delta_lw_add  : ', solver_buffer(1) % delta_lw_add(:10)
       end if
 
       ! Correct the radiative scheme results with the NN results
