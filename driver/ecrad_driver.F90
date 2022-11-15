@@ -304,6 +304,56 @@ program ecrad_driver
       end do
   end if
 
+  if (driver_config%iverbose >= 5) then
+      write(*, *) 'Min/Max skin_temperature        : ', single_level % skin_temperature(1)
+      write(*, *) 'Min/Max cos_solar_zenith_angle  : ', single_level % cos_sza(1)
+      write(*, *) 'Min/Max sw_albedo               : ', MINVAL((/single_level % sw_albedo(1,:)/)), ' ', &
+              & MAXVAL((/single_level % sw_albedo(1,:)/))
+      write(*, *) 'Min/Max sw_albedo_direct        : ', MINVAL((/single_level % sw_albedo_direct(1,:)/)), ' ', &
+              & MAXVAL((/single_level % sw_albedo_direct(1,:)/))
+      write(*, *) 'Min/Max lw_emissivity           : ', MINVAL((/single_level % lw_emissivity(1,:)/)), ' ', &
+              & MAXVAL((/single_level % lw_emissivity(1,:)/))
+      write(*, *) 'Min/Max solar_irradiance        : ', single_level % solar_irradiance
+      write(*, *) 'Min/Max q                       : ', MINVAL((/gas % mixing_ratio(1,:,1)/)), ' ', &
+              & MAXVAL((/gas % mixing_ratio(1,:,1)/))
+      write(*, *) 'Min/Max o3_mmr                  : ', MINVAL((/gas % mixing_ratio(1,:,3)/)), ' ', &
+              & MAXVAL((/gas % mixing_ratio(1,:,3)/))
+      write(*, *) 'Min/Max co2_vmr                 : ', MINVAL((/gas % mixing_ratio(1,:,2)/)), ' ', &
+              & MAXVAL((/gas % mixing_ratio(1,:,2)/))
+      write(*, *) 'Min/Max n2o_vmr                 : ', MINVAL((/gas % mixing_ratio(1,:,4)/)), ' ', &
+              & MAXVAL((/gas % mixing_ratio(1,:,4)/))
+      write(*, *) 'Min/Max ch4_vmr                 : ', MINVAL((/gas % mixing_ratio(1,:,6)/)), ' ', &
+              & MAXVAL((/gas % mixing_ratio(1,:,6)/))
+      write(*, *) 'Min/Max o2_vmr                  : ', MINVAL((/gas % mixing_ratio(1,:,7)/)), ' ', &
+              & MAXVAL((/gas % mixing_ratio(1,:,7)/))
+      write(*, *) 'Min/Max cfc11_vmr               : ', MINVAL((/gas % mixing_ratio(1,:,8)/)), ' ', &
+              & MAXVAL((/gas % mixing_ratio(1,:,8)/))
+      write(*, *) 'Min/Max cfc12_vmr               : ', MINVAL((/gas % mixing_ratio(1,:,9)/)), ' ', &
+              & MAXVAL((/gas % mixing_ratio(1,:,9)/))
+      write(*, *) 'Min/Max hcfc22_vmr              : ', MINVAL((/gas % mixing_ratio(1,:,10)/)), ' ', &
+              & MAXVAL((/gas % mixing_ratio(1,:,10)/))
+      write(*, *) 'Min/Max ccl4_vmr                : ', MINVAL((/gas % mixing_ratio(1,:,11)/)), ' ', &
+              & MAXVAL((/gas % mixing_ratio(1,:,11)/))
+      write(*, *) 'Min/Max cloud_fraction          : ', MINVAL((/cloud % fraction(1,:)/)), ' ', &
+              & MAXVAL((/cloud % fraction(1,:)/))
+      write(*, *) 'Min/Max aerosol_mmr             : ', MINVAL((/aerosol % mixing_ratio(1,:,:)/)), ' ', &
+              & MAXVAL((/aerosol % mixing_ratio(1,:,:)/))
+      write(*, *) 'Min/Max q_liquid                : ', MINVAL((/cloud % q_liq(1,:)/)), ' ', &
+              & MAXVAL((/cloud % q_liq(1,:)/))
+      write(*, *) 'Min/Max q_ice                   : ', MINVAL((/cloud % q_ice(1,:)/)), ' ', &
+              & MAXVAL((/cloud % q_ice(1,:)/))
+      write(*, *) 'Min/Max re_liquid               : ', MINVAL((/cloud % re_liq(1,:)/)), ' ', &
+              & MAXVAL((/cloud % re_liq(1,:)/))
+      write(*, *) 'Min/Max re_ice                  : ', MINVAL((/cloud % re_ice(1,:)/)), ' ', &
+              & MAXVAL((/cloud % re_ice(1,:)/))
+      write(*, *) 'Min/Max temperature_hl          : ', MINVAL((/thermodynamics % temperature_hl(1,:)/)), ' ', &
+              & MAXVAL((/thermodynamics % temperature_hl(1,:)/))
+      write(*, *) 'Min/Max pressure_hl             : ', MINVAL((/thermodynamics % pressure_hl(1,:)/)), ' ', &
+              & MAXVAL((/thermodynamics % pressure_hl(1,:)/))
+      write(*, *) 'Min/Max overlap_param           : ', MINVAL((/cloud % overlap_param(1,:)/)), ' ', &
+              & MAXVAL((/cloud % overlap_param(1,:)/))
+  end if
+
   ! Ensure the units of the gas mixing ratios are what is required
   ! by the gas absorption model
   call set_gas_units(config, gas)
@@ -403,6 +453,20 @@ program ecrad_driver
         write(*, *) 'I->S delta_lw_add  : ', solver_buffer(1) % delta_lw_add(:10)
       end if
 
+
+      ! Generate the output file name
+        write(rank_string,'(I4)') solver_binding % rank
+        file_name = trim(file_name)
+        extension_index = index(file_name, ".")
+        output_file_name = file_name(1:extension_index-1)//'_origin_'//&
+                &trim(adjustl(rank_string))//file_name(extension_index:len(file_name))
+
+        ! Store the fluxes in the output file
+        call save_fluxes(output_file_name, config, thermodynamics, flux, &
+             &   iverbose=driver_config%iverbose, is_hdf5_file=driver_config%do_write_hdf5, &
+             &   experiment_name=driver_config%experiment_name, &
+             &   is_double_precision=driver_config%do_write_double_precision)
+
       ! Correct the radiative scheme results with the NN results
       if (driver_config%iverbose >= 3) then
         write(nulout,'(a,i0,a,i0)')  'Correct the radiative scheme results with the NN results.'
@@ -434,7 +498,8 @@ program ecrad_driver
     write(rank_string,'(I4)') solver_binding % rank
     file_name = trim(file_name)
     extension_index = index(file_name, ".")
-    output_file_name = file_name(1:extension_index-1)//'_'//trim(adjustl(rank_string))//file_name(extension_index:len(file_name))
+    output_file_name = file_name(1:extension_index-1)//'_'//&
+            &trim(adjustl(rank_string))//file_name(extension_index:len(file_name))
 
     ! Store the fluxes in the output file
     call save_fluxes(output_file_name, config, thermodynamics, flux, &
