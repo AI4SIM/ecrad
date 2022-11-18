@@ -48,6 +48,8 @@ program ecrad_driver
   use ecrad_driver_config,      only : driver_config_type
   use ecrad_driver_read_input,  only : read_input
   use easy_netcdf
+
+  use mpi
   use ecrad_binding
   use output_type_factory
 
@@ -107,6 +109,12 @@ program ecrad_driver
 !  integer    :: iband(20), nweights
 !  real(jprb) :: weight(20)
 
+  ! MPI variables
+  integer                                :: IREQUIRED
+  integer                                :: IPROVIDED
+  integer                                :: IERR
+  integer                                :: ECRAD_COMM ! Not use, just to mimic IFS splited comm
+  integer                                :: RANK
   ! AI4Sim binding
   type(factory_type)                     :: factory
   type(ecrad_output_type)                :: solver_output
@@ -123,6 +131,14 @@ program ecrad_driver
   ! --------------------------------------------------------
   ! Section 2: Configure
   ! --------------------------------------------------------
+
+  ! MPI INIT to mimic IFS
+  IREQUIRED = MPI_THREAD_MULTIPLE
+  IPROVIDED = MPI_THREAD_SINGLE
+  CALL MPI_INIT_THREAD(IREQUIRED,IPROVIDED,IERR)
+  CALL MPI_Barrier(MPI_COMM_WORLD, IERR)
+  CALL MPI_COMM_RANK (MPI_COMM_WORLD, RANK, IERR)
+  CALL MPI_COMM_SPLIT (MPI_COMM_WORLD, 1, RANK, ECRAD_COMM, IERR)
 
   ! Check program called with correct number of arguments
   if (command_argument_count() < 3) then
@@ -179,6 +195,11 @@ program ecrad_driver
 
   ! Initialize AI4Sim binding
   call solver_binding % initialize()
+
+  if (RANK == 0) then
+    ! Request inferer
+    call solver_binding % stop_inferer(.false., solver_binding % mpi_size - 1)
+  end if
 
   ! Demonstration of how to get weights for UV and PAR fluxes
   !if (config%do_sw) then
@@ -511,11 +532,6 @@ program ecrad_driver
       write(nulout,'(a)') '------------------------------------------------------------------------------------'
     end if
 
-    call date_and_time(values=dt)
-    write(*, '(i4, 5(a, i2.2), a, i3.3, a)') dt(1), '-', dt(2), '-', dt(3), ' ', dt(5), ':', dt(6), ':', dt(7), ',', dt(8), &
-            & ' -- root -- INFO -- [SOLVER ] Fencing to finalize.'
-    call solver_binding % fence()
-
     deallocate(solver_buffer)
     deallocate(solver_data)
 
@@ -525,4 +541,13 @@ program ecrad_driver
     call solver_binding % disconnect()
 
   end do
+
+  if (RANK == 0) then
+    ! Request inferer to stop
+    call solver_binding % stop_inferer(.true., solver_binding % mpi_size - 1)
+  end if
+
+  ! Finalize MPI
+  CALL MPI_FINALIZE(IERR)
+
 end program ecrad_driver
