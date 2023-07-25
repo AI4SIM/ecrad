@@ -63,9 +63,9 @@ endif
 
 # Consolidate flags
 export FC
-export FCFLAGS = $(WARNFLAGS) $(BASICFLAGS) $(CPPFLAGS) -I../include -I/usr/local/ai4sim/lib \
+export FCFLAGS = $(WARNFLAGS) $(BASICFLAGS) $(CPPFLAGS) -I../include -I$(AI4SIM_LIB) \
 	$(OPTFLAGS) $(DEBUGFLAGS) $(NETCDF_INCLUDE) $(OMPFLAG)
-export LIBS    = $(LDFLAGS) -L../lib -L/usr/local/ai4sim/lib -lai4sim_binding_ecrad -lradiation -lutilities \
+export LIBS    = $(LDFLAGS) -L../lib -L$(AI4SIM_LIB) -lai4sim_binding_ecrad -lradiation -lutilities \
 	-lifsrrtm -ldrhook -lifsaux $(FCLIBS) $(NETCDF_LIB) $(OMPFLAG)
 ifdef DR_HOOK
 LIBS += -ldl -lrt
