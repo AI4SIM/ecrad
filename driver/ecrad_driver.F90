@@ -115,13 +115,14 @@ program ecrad_driver
   integer                                :: IERR
   integer                                :: ECRAD_COMM ! Not use, just to mimic IFS splited comm
   integer                                :: RANK
+  logical(1)                             :: L_stop_inferer
+
   ! AI4Sim binding
-  type(factory_type)                     :: factory
-  type(ecrad_output_type)                :: solver_output
-  type(inferer_output_type)              :: solver_input
-  type(ecrad_binding_type)               :: solver_binding
-  type(ecrad_output_type), allocatable   :: solver_data(:)
-  type(inferer_output_type), allocatable :: solver_buffer(:)
+  type(ecrad_output_struct)                :: solver_output
+  type(inferer_output_struct)              :: solver_input
+  type(ecrad_binding_type)                 :: solver_binding
+  type(ecrad_output_struct), allocatable   :: solver_data(:)
+  type(inferer_output_struct), allocatable :: solver_buffer(:)
   ! Generic variables
   integer                                :: dt(8)
   character(len=4)                       :: rank_string
@@ -194,11 +195,13 @@ program ecrad_driver
   call setup_radiation(config)
 
   ! Initialize AI4Sim binding
-  call solver_binding % initialize()
+    call solver_binding % new()
+    call solver_binding % initialize(solver_output, solver_input)
 
   if (RANK == 0) then
     ! Request inferer
-    call solver_binding % stop_inferer(.false., solver_binding % mpi_size - 1)
+    L_stop_inferer = .false.
+    call solver_binding % stop_inferer(L_stop_inferer, solver_binding % mpi_size - 1)
   end if
 
   ! Demonstration of how to get weights for UV and PAR fluxes
@@ -275,13 +278,11 @@ program ecrad_driver
   end if
 
   ! Use parameters from the file to finalize the initialization of AI4Sim
-  call factory % create_ecrad_output_type(nlev, nemissbands, nalbedobands, ngas, solver_output, solver_binding % mpi_err)
-  call factory % create_inferer_output_type(nlev, solver_input, solver_binding % mpi_err)
-
   allocate(solver_buffer(driver_config % nblocksize))
   allocate(solver_data(driver_config % nblocksize))
 
-  call solver_binding % connect(solver_buffer, driver_config % nblocksize, factory)
+  call solver_binding % connect(solver_buffer, driver_config % nblocksize, driver_config % nblocksize)
+  call solver_binding % fence()
 
   ! --------------------------------------------------------
   ! Section 4: Call radiation scheme
@@ -289,7 +290,7 @@ program ecrad_driver
 
   ! If we use it, set the input of the inferer before they will be modiified by eCrad preprocessing.
   if (.not.(driver_config%do_parallel)) then
-      istartcol = solver_binding % rank * driver_config % nblocksize + 1
+      istartcol = RANK * driver_config % nblocksize + 1
 
       do jblock = 1, driver_config % nblocksize
         ! Create data structure for AI4Sim
@@ -443,7 +444,7 @@ program ecrad_driver
       !$OMP END PARALLEL DO
       
     else
-      iendcol = (solver_binding % rank + 1) * driver_config % nblocksize
+      iendcol = (RANK + 1) * driver_config % nblocksize
 
       if (driver_config%iverbose >= 3) then
         write(nulout,'(a,i0,a)')  'Processing ', (iendcol - istartcol + 1), ' columns'
@@ -451,7 +452,7 @@ program ecrad_driver
       end if
 
       ! Put data into the inferer buffer
-      call solver_binding % put(solver_data, factory, solver_binding % mpi_size - 1)
+      call solver_binding % put(solver_data, driver_config % nblocksize, solver_binding % mpi_size - 1)
 
       ! Wait for all the ecrad process to write into the inferer buffer
       call solver_binding % fence()
@@ -476,7 +477,7 @@ program ecrad_driver
 
 
       ! Generate the output file name
-        write(rank_string,'(I4)') solver_binding % rank
+        write(rank_string,'(I4)') RANK
         file_name = trim(file_name)
         extension_index = index(file_name, ".")
         output_file_name = file_name(1:extension_index-1)//'_origin_'//&
@@ -516,7 +517,7 @@ program ecrad_driver
     is_out_of_bounds = flux%out_of_physical_bounds(driver_config%istartcol, driver_config%iendcol)
 
     ! Generate the output file name
-    write(rank_string,'(I4)') solver_binding % rank
+    write(rank_string,'(I4)') RANK
     file_name = trim(file_name)
     extension_index = index(file_name, ".")
     output_file_name = file_name(1:extension_index-1)//'_'//&
@@ -535,17 +536,17 @@ program ecrad_driver
     deallocate(solver_buffer)
     deallocate(solver_data)
 
-    call factory % free_ecrad_output_type(solver_binding % mpi_err)
-    call factory % free_inferer_output_type(solver_binding % mpi_err)
-
     call solver_binding % disconnect()
 
   end do
 
   if (RANK == 0) then
     ! Request inferer to stop
-    call solver_binding % stop_inferer(.true., solver_binding % mpi_size - 1)
+    L_stop_inferer = .true.
+    call solver_binding % stop_inferer(L_stop_inferer, solver_binding % mpi_size - 1)
   end if
+
+  call solver_binding % delete()
 
   ! Finalize MPI
   CALL MPI_FINALIZE(IERR)
