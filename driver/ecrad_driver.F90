@@ -114,7 +114,7 @@ program ecrad_driver
   integer                                :: IPROVIDED
   integer                                :: IERR
   integer                                :: ECRAD_COMM ! Not use, just to mimic IFS splited comm
-  integer                                :: RANK
+  integer                                :: MPI_SIZE, RANK
   logical(1)                             :: L_stop_inferer
 
   ! AI4Sim binding
@@ -128,6 +128,7 @@ program ecrad_driver
   character(len=4)                       :: rank_string
   character(len=512)                     :: output_file_name
   integer                                :: extension_index
+  integer                                :: n_solver_proc, n_inferer, inferer_rank, proc_num
 
   ! --------------------------------------------------------
   ! Section 2: Configure
@@ -138,8 +139,10 @@ program ecrad_driver
   IPROVIDED = MPI_THREAD_SINGLE
   CALL MPI_INIT_THREAD(IREQUIRED,IPROVIDED,IERR)
   CALL MPI_Barrier(MPI_COMM_WORLD, IERR)
+  CALL MPI_COMM_SIZE(MPI_COMM_WORLD, MPI_SIZE, IERR)
   CALL MPI_COMM_RANK (MPI_COMM_WORLD, RANK, IERR)
   CALL MPI_COMM_SPLIT (MPI_COMM_WORLD, 1, RANK, ECRAD_COMM, IERR)
+  CALL MPI_COMM_SIZE(ECRAD_COMM, n_solver_proc, IERR)
 
   ! Check program called with correct number of arguments
   if (command_argument_count() < 3) then
@@ -194,14 +197,22 @@ program ecrad_driver
   ! cloud optics, currently from RRTMG
   call setup_radiation(config)
 
+  n_inferer = MPI_SIZE - n_solver_proc;
+  inferer_rank = MOD(RANK, n_inferer) + n_solver_proc;
+  proc_num = (RANK / n_inferer);
+  if (proc_num == 0) then
+      ! Send to the good  inferer the solver processes infos
+      call solver_binding % start_inferer(n_solver_proc, inferer_rank)
+  end if
+
   ! Initialize AI4Sim binding
     call solver_binding % new()
     call solver_binding % initialize(solver_output, solver_input)
 
-  if (RANK == 0) then
+  if (proc_num == 0) then
     ! Request inferer
     L_stop_inferer = .false.
-    call solver_binding % stop_inferer(L_stop_inferer, solver_binding % mpi_size - 1)
+    call solver_binding % stop_inferer(L_stop_inferer, inferer_rank)
   end if
 
   ! Demonstration of how to get weights for UV and PAR fluxes
@@ -452,7 +463,7 @@ program ecrad_driver
       end if
 
       ! Put data into the inferer buffer
-      call solver_binding % put(solver_data, driver_config % nblocksize, solver_binding % mpi_size - 1)
+      call solver_binding % put(solver_data, driver_config % nblocksize, proc_num, inferer_rank)
 
       ! Wait for all the ecrad process to write into the inferer buffer
       call solver_binding % fence()
@@ -540,10 +551,10 @@ program ecrad_driver
 
   end do
 
-  if (RANK == 0) then
+  if (proc_num == 0) then
     ! Request inferer to stop
     L_stop_inferer = .true.
-    call solver_binding % stop_inferer(L_stop_inferer, solver_binding % mpi_size - 1)
+    call solver_binding % stop_inferer(L_stop_inferer, inferer_rank)
   end if
 
   call solver_binding % delete()
