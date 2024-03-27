@@ -42,7 +42,7 @@ contains
        &  use_beta_overlap, use_vectorizable_generator)
 
     use parkind1, only           : jprb
-    use yomhook,  only           : lhook, dr_hook
+    use yomhook,  only           : lhook, dr_hook, jphook
     use radiation_io,   only     : nulerr, radiation_abort
     use random_numbers_mix, only : randomnumberstream, &
          initialize_random_numbers, uniform_distribution
@@ -132,7 +132,7 @@ contains
 
     logical :: use_vec_gen
 
-    real(jprb) :: hook_handle
+    real(jphook) :: hook_handle
 
     if (lhook) call dr_hook('radiation_cloud_generator:cloud_generator',0,hook_handle)
 
@@ -390,7 +390,6 @@ contains
   end subroutine generate_column_exp_ran
 
 
-
   !---------------------------------------------------------------------
   ! Generate a column of optical depth scalings using
   ! exponential-exponential overlap
@@ -540,7 +539,7 @@ contains
     use parkind1,              only : jprb
     use radiation_pdf_sampler, only : pdf_sampler_type
     implicit none
-#if defined(__GFORTRAN__) || defined(__PGI) || defined(__NEC__)
+#if defined(__GFORTRAN__) || defined(__PGI) || defined(__NEC__) || defined(__INTEL_LLVM_COMPILER)
 #else
     !$omp declare simd(sample_from_pdf_simd) uniform(this) &
     !$omp linear(ref(fsd)) linear(ref(cdf))

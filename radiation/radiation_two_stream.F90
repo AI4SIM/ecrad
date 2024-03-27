@@ -18,6 +18,10 @@
 !   2017-07-26  R Hogan  Added calc_frac_scattered_diffuse_sw routine
 !   2017-10-23  R Hogan  Renamed single-character variables
 !   2021-02-19  R Hogan  Security for shortwave singularity
+!   2022-11-22  P Ukkonen/R Hogan  Single precision uses no double precision
+!   2023-09-28  R Hogan  Increased security for single-precision SW "k"
+
+#include "ecrad_config.h"
 
 module radiation_two_stream
 
@@ -34,35 +38,12 @@ module radiation_two_stream
   real(jprd), parameter :: LwDiffusivity   = 1.66_jprd
   real(jprb), parameter :: LwDiffusivityWP = 1.66_jprb ! Working precision version
 
-  ! Shortwave diffusivity factor assumes hemispheric isotropy, assumed
-  ! by Zdunkowski's scheme and most others; note that for efficiency
-  ! this parameter is not used in the calculation of the gamma values,
-  ! but is used in the SPARTACUS solver.
-  real(jprb), parameter :: SwDiffusivity = 2.00_jprb
-
   ! The routines in this module can be called millions of times, so
-  !calling Dr Hook for each one may be a significant overhead.
-  !Uncomment the following to turn Dr Hook on.
+  ! calling Dr Hook for each one may be a significant overhead.
+  ! Uncomment the following to turn Dr Hook on.
 !#define DO_DR_HOOK_TWO_STREAM
 
 contains
-
-#ifdef FAST_EXPONENTIAL
-  !---------------------------------------------------------------------
-  ! Fast exponential for negative arguments: a Pade approximant that
-  ! doesn't go negative for negative arguments, applied to arg/8, and
-  ! the result is then squared three times
-  elemental function exp_fast(arg) result(ex)
-    real(jprd) :: arg, ex
-    ex = 1.0_jprd / (1.0_jprd + arg*(-0.125_jprd &
-         + arg*(0.0078125_jprd - 0.000325520833333333_jprd * arg)))
-    ex = ex*ex
-    ex = ex*ex
-    ex = ex*ex
-  end function exp_fast
-#else
-#define exp_fast exp
-#endif
 
   !---------------------------------------------------------------------
   ! Calculate the two-stream coefficients gamma1 and gamma2 for the
@@ -71,7 +52,7 @@ contains
        &                               gamma1, gamma2)
 
 #ifdef DO_DR_HOOK_TWO_STREAM
-    use yomhook, only : lhook, dr_hook
+    use yomhook, only : lhook, dr_hook, jphook
 #endif
 
     integer, intent(in) :: ng
@@ -84,7 +65,7 @@ contains
     integer    :: jg
 
 #ifdef DO_DR_HOOK_TWO_STREAM
-    real(jprb) :: hook_handle
+    real(jphook) :: hook_handle
 
     if (lhook) call dr_hook('radiation_two_stream:calc_two_stream_gammas_lw',0,hook_handle)
 #endif
@@ -116,7 +97,7 @@ contains
        &                               gamma1, gamma2, gamma3)
 
 #ifdef DO_DR_HOOK_TWO_STREAM
-    use yomhook, only : lhook, dr_hook
+    use yomhook, only : lhook, dr_hook, jphook
 #endif
 
     integer, intent(in) :: ng
@@ -131,7 +112,7 @@ contains
     integer    :: jg
 
 #ifdef DO_DR_HOOK_TWO_STREAM
-    real(jprb) :: hook_handle
+    real(jphook) :: hook_handle
 
     if (lhook) call dr_hook('radiation_two_stream:calc_two_stream_gammas_sw',0,hook_handle)
 #endif
@@ -169,9 +150,11 @@ contains
        &    reflectance, transmittance, source_up, source_dn)
 
 #ifdef DO_DR_HOOK_TWO_STREAM
-    use yomhook, only : lhook, dr_hook
+    use yomhook, only : lhook, dr_hook, jphook
 #endif
 
+    implicit none
+    
     integer, intent(in) :: ng
 
     ! Optical depth and single scattering albedo
@@ -204,7 +187,7 @@ contains
     integer :: jg
 
 #ifdef DO_DR_HOOK_TWO_STREAM
-    real(jprb) :: hook_handle
+    real(jphook) :: hook_handle
 
     if (lhook) call dr_hook('radiation_two_stream:calc_reflectance_transmittance_lw',0,hook_handle)
 #endif
@@ -214,8 +197,8 @@ contains
     do jg = 1, ng
       if (od(jg) > 1.0e-3_jprd) then
         k_exponent = sqrt(max((gamma1(jg) - gamma2(jg)) * (gamma1(jg) + gamma2(jg)), &
-             1.E-12_jprd)) ! Eq 18 of Meador & Weaver (1980)
-        exponential = exp_fast(-k_exponent*od(jg))
+             1.0e-12_jprd)) ! Eq 18 of Meador & Weaver (1980)
+        exponential = exp(-k_exponent*od(jg))
         exponential2 = exponential*exponential
         reftrans_factor = 1.0 / (k_exponent + gamma1(jg) + (k_exponent - gamma1(jg))*exponential2)
         ! Meador & Weaver (1980) Eq. 25
@@ -237,7 +220,7 @@ contains
         source_dn(jg) =  coeff_dn_bot - reflectance(jg) * coeff_up_bot - transmittance(jg) * coeff_dn_top
       else
         k_exponent = sqrt(max((gamma1(jg) - gamma2(jg)) * (gamma1(jg) + gamma2(jg)), &
-             1.E-12_jprd)) ! Eq 18 of Meador & Weaver (1980)
+             1.0e-12_jprd)) ! Eq 18 of Meador & Weaver (1980)
         reflectance(jg) = gamma2(jg) * od(jg)
         transmittance(jg) = (1.0_jprb - k_exponent*od(jg)) / (1.0_jprb + od(jg)*(gamma1(jg)-k_exponent))
         source_up(jg) = (1.0_jprb - reflectance(jg) - transmittance(jg)) &
@@ -253,15 +236,19 @@ contains
   end subroutine calc_reflectance_transmittance_lw
   
 
-
   !---------------------------------------------------------------------
-  ! As calc_reflectance_transmittance_lw but for an isothermal layer
-  subroutine calc_reflectance_transmittance_isothermal_lw(ng, &
-       &    od, gamma1, gamma2, planck, &
-       &    reflectance, transmittance, source)
+  ! Compute the longwave reflectance and transmittance to diffuse
+  ! radiation using the Meador & Weaver formulas, as well as the
+  ! upward flux at the top and the downward flux at the base of the
+  ! layer due to emission from within the layer assuming a linear
+  ! variation of Planck function within the layer; this version
+  ! computes gamma1 and gamma2 within the same routine.
+  subroutine calc_ref_trans_lw(ng, &
+       &    od, ssa, asymmetry, planck_top, planck_bot, &
+       &    reflectance, transmittance, source_up, source_dn)
 
 #ifdef DO_DR_HOOK_TWO_STREAM
-    use yomhook, only : lhook, dr_hook
+    use yomhook, only : lhook, dr_hook, jphook
 #endif
 
     integer, intent(in) :: ng
@@ -269,14 +256,12 @@ contains
     ! Optical depth and single scattering albedo
     real(jprb), intent(in), dimension(ng) :: od
 
-    ! The two transfer coefficients from the two-stream
-    ! differentiatial equations (computed by
-    ! calc_two_stream_gammas_lw)
-    real(jprb), intent(in), dimension(ng) :: gamma1, gamma2
+    ! Single scattering albedo and asymmetry factor
+    real(jprb), intent(in), dimension(ng) :: ssa, asymmetry
 
-    ! The Planck terms (functions of temperature) constant through the
-    ! layer
-    real(jprb), intent(in), dimension(ng) :: planck
+    ! The Planck terms (functions of temperature) at the top and
+    ! bottom of the layer
+    real(jprb), intent(in), dimension(ng) :: planck_top, planck_bot
 
     ! The diffuse reflectance and transmittance, i.e. the fraction of
     ! diffuse radiation incident on a layer from either top or bottom
@@ -285,47 +270,69 @@ contains
 
     ! The upward emission at the top of the layer and the downward
     ! emission at its base, due to emission from within the layer
-    real(jprb), intent(out), dimension(ng) :: source
+    real(jprb), intent(out), dimension(ng) :: source_up, source_dn
 
-    real(jprd) :: k_exponent, reftrans_factor
-    real(jprd) :: exponential  ! = exp(-k_exponent*od)
-    real(jprd) :: exponential2 ! = exp(-2*k_exponent*od)
+    ! The two transfer coefficients from the two-stream
+    ! differentiatial equations
+    real(jprb) :: gamma1, gamma2
+
+    real(jprb) :: k_exponent, reftrans_factor, factor
+    real(jprb) :: exponential  ! = exp(-k_exponent*od)
+    real(jprb) :: exponential2 ! = exp(-2*k_exponent*od)
+
+    real(jprb) :: coeff, coeff_up_top, coeff_up_bot, coeff_dn_top, coeff_dn_bot
 
     integer :: jg
 
 #ifdef DO_DR_HOOK_TWO_STREAM
-    real(jprb) :: hook_handle
+    real(jphook) :: hook_handle
 
-    if (lhook) call dr_hook('radiation_two_stream:calc_reflectance_transmittance_isothermal_lw',0,hook_handle)
+    if (lhook) call dr_hook('radiation_two_stream:calc_ref_trans_lw',0,hook_handle)
 #endif
 
-! Added for DWD (2020)
-!NEC$ shortloop
     do jg = 1, ng
-      k_exponent = sqrt(max((gamma1(jg) - gamma2(jg)) * (gamma1(jg) + gamma2(jg)), &
-           1.E-12_jprd)) ! Eq 18 of Meador & Weaver (1980)
-      exponential = exp_fast(-k_exponent*od(jg))
-      exponential2 = exponential*exponential
-      reftrans_factor = 1.0 / (k_exponent + gamma1(jg) + (k_exponent - gamma1(jg))*exponential2)
-      ! Meador & Weaver (1980) Eq. 25
-      reflectance(jg) = gamma2(jg) * (1.0_jprd - exponential2) * reftrans_factor
-      ! Meador & Weaver (1980) Eq. 26
-      transmittance(jg) = 2.0_jprd * k_exponent * exponential * reftrans_factor
+      factor = (LwDiffusivityWP * 0.5_jprb) * ssa(jg)
+      gamma1 = LwDiffusivityWP - factor*(1.0_jprb + asymmetry(jg))
+      gamma2 = factor * (1.0_jprb - asymmetry(jg))
+      k_exponent = sqrt(max((gamma1 - gamma2) * (gamma1 + gamma2), &
+           1.0e-12_jprb)) ! Eq 18 of Meador & Weaver (1980)
+      if (od(jg) > 1.0e-3_jprb) then
+        exponential = exp(-k_exponent*od(jg))
+        exponential2 = exponential*exponential
+        reftrans_factor = 1.0_jprb / (k_exponent + gamma1 + (k_exponent - gamma1)*exponential2)
+        ! Meador & Weaver (1980) Eq. 25
+        reflectance(jg) = gamma2 * (1.0_jprb - exponential2) * reftrans_factor
+        ! Meador & Weaver (1980) Eq. 26
+        transmittance(jg) = 2.0_jprb * k_exponent * exponential * reftrans_factor
       
-      ! Emissivity of layer is one minus reflectance minus
-      ! transmittance, multiply by Planck function to get emitted
-      ! ousrce
-      source(jg) = planck(jg) * (1.0_jprd - reflectance(jg) - transmittance(jg))
+        ! Compute upward and downward emission assuming the Planck
+        ! function to vary linearly with optical depth within the layer
+        ! (e.g. Wiscombe , JQSRT 1976).
+
+        ! Stackhouse and Stephens (JAS 1991) Eqs 5 & 12
+        coeff = (planck_bot(jg)-planck_top(jg)) / (od(jg)*(gamma1+gamma2))
+        coeff_up_top  =  coeff + planck_top(jg)
+        coeff_up_bot  =  coeff + planck_bot(jg)
+        coeff_dn_top  = -coeff + planck_top(jg)
+        coeff_dn_bot  = -coeff + planck_bot(jg)
+        source_up(jg) =  coeff_up_top - reflectance(jg) * coeff_dn_top - transmittance(jg) * coeff_up_bot
+        source_dn(jg) =  coeff_dn_bot - reflectance(jg) * coeff_up_bot - transmittance(jg) * coeff_dn_top
+      else
+        reflectance(jg) = gamma2 * od(jg)
+        transmittance(jg) = (1.0_jprb - k_exponent*od(jg)) / (1.0_jprb + od(jg)*(gamma1-k_exponent))
+        source_up(jg) = (1.0_jprb - reflectance(jg) - transmittance(jg)) &
+             &       * 0.5 * (planck_top(jg) + planck_bot(jg))
+        source_dn(jg) = source_up(jg)
+      end if
     end do
     
 #ifdef DO_DR_HOOK_TWO_STREAM
-    if (lhook) call dr_hook('radiation_two_stream:calc_reflectance_transmittance_isothermal_lw',1,hook_handle)
+    if (lhook) call dr_hook('radiation_two_stream:calc_ref_trans_lw',1,hook_handle)
 #endif
   
-  end subroutine calc_reflectance_transmittance_isothermal_lw
+  end subroutine calc_ref_trans_lw
   
-
-
+  
   !---------------------------------------------------------------------
   ! Compute the longwave transmittance to diffuse radiation in the
   ! no-scattering case, as well as the upward flux at the top and the
@@ -336,7 +343,7 @@ contains
        &    od, planck_top, planck_bot, transmittance, source_up, source_dn)
 
 #ifdef DO_DR_HOOK_TWO_STREAM
-    use yomhook, only : lhook, dr_hook
+    use yomhook, only : lhook, dr_hook, jphook
 #endif
 
     integer, intent(in) :: ng
@@ -357,26 +364,30 @@ contains
     ! emission at its base, due to emission from within the layer
     real(jprb), intent(out), dimension(ng) :: source_up, source_dn
 
-    real(jprd) :: coeff, coeff_up_top, coeff_up_bot, coeff_dn_top, coeff_dn_bot !, planck_mean
+    real(jprb) :: coeff, coeff_up_top, coeff_up_bot, coeff_dn_top, coeff_dn_bot !, planck_mean
 
     integer :: jg
 
 #ifdef DO_DR_HOOK_TWO_STREAM
-    real(jprb) :: hook_handle
+    real(jphook) :: hook_handle
 
     if (lhook) call dr_hook('radiation_two_stream:calc_no_scattering_transmittance_lw',0,hook_handle)
 #endif
 
-! Added for DWD (2020)
-!NEC$ shortloop
+#ifndef DWD_TWO_STREAM_OPTIMIZATIONS
+    transmittance = exp(-LwDiffusivityWP*od)
+#endif
+
     do jg = 1, ng
       ! Compute upward and downward emission assuming the Planck
       ! function to vary linearly with optical depth within the layer
       ! (e.g. Wiscombe , JQSRT 1976).
-      if (od(jg) > 1.0e-3) then
+      coeff = LwDiffusivityWP*od(jg)
+#ifdef DWD_TWO_STREAM_OPTIMIZATIONS
+      transmittance(jg) = exp(-coeff)
+#endif
+      if (od(jg) > 1.0e-3_jprb) then
         ! Simplified from calc_reflectance_transmittance_lw above
-        coeff = LwDiffusivity*od(jg)
-        transmittance(jg) = exp_fast(-coeff)
         coeff = (planck_bot(jg)-planck_top(jg)) / coeff
         coeff_up_top  =  coeff + planck_top(jg)
         coeff_up_bot  =  coeff + planck_bot(jg)
@@ -386,21 +397,10 @@ contains
         source_dn(jg) =  coeff_dn_bot - transmittance(jg) * coeff_dn_top
       else
         ! Linear limit at low optical depth
-        coeff = LwDiffusivity*od(jg)
-        transmittance(jg) = 1.0_jprb - coeff
         source_up(jg) = coeff * 0.5_jprb * (planck_top(jg)+planck_bot(jg))
         source_dn(jg) = source_up(jg)
       end if
     end do
-
-    ! Method in the older IFS radiation scheme
-    !    do j = 1, n
-    !      coeff = od(jg) / (3.59712_jprd + od(jg))
-    !      planck_mean = 0.5_jprd * (planck_top(jg) + planck_bot(jg))
-    !      
-    !      source_up(jg) = (1.0_jprd-transmittance(jg)) * (planck_mean + (planck_top(jg)    - planck_mean) * coeff)
-    !      source_dn(jg) = (1.0_jprd-transmittance(jg)) * (planck_mean + (planck_bot(jg) - planck_mean) * coeff)
-    !    end do
 
 #ifdef DO_DR_HOOK_TWO_STREAM
     if (lhook) call dr_hook('radiation_two_stream:calc_no_scattering_transmittance_lw',1,hook_handle)
@@ -423,7 +423,7 @@ contains
        &      ref_dir, trans_dir_diff, trans_dir_dir)
     
 #ifdef DO_DR_HOOK_TWO_STREAM
-    use yomhook, only : lhook, dr_hook
+    use yomhook, only : lhook, dr_hook, jphook
 #endif
 
     integer, intent(in) :: ng
@@ -453,7 +453,7 @@ contains
     real(jprb), intent(out), dimension(ng) :: trans_dir_dir
 
     real(jprd) :: gamma4, alpha1, alpha2, k_exponent, reftrans_factor
-    real(jprd) :: exponential0 ! = exp(-od/mu0)
+    real(jprb) :: exponential0 ! = exp(-od/mu0)
     real(jprd) :: exponential  ! = exp(-k_exponent*od)
     real(jprd) :: exponential2 ! = exp(-2*k_exponent*od)
     real(jprd) :: k_mu0, k_gamma3, k_gamma4
@@ -466,7 +466,7 @@ contains
     real(jprb) :: mu0_local
 
 #ifdef DO_DR_HOOK_TWO_STREAM
-    real(jprb) :: hook_handle
+    real(jphook) :: hook_handle
 
     if (lhook) call dr_hook('radiation_two_stream:calc_reflectance_transmittance_sw',0,hook_handle)
 #endif
@@ -501,9 +501,9 @@ contains
         k_gamma3 = k_exponent*gamma3(jg)
         k_gamma4 = k_exponent*gamma4
         ! Check for mu0 <= 0!
-        exponential0 = exp_fast(-od_over_mu0)
+        exponential0 = exp(-od_over_mu0)
         trans_dir_dir(jg) = exponential0
-        exponential = exp_fast(-k_exponent*od(jg))
+        exponential = exp(-k_exponent*od(jg))
         
         exponential2 = exponential*exponential
         k_2_exponential = 2.0_jprd * k_exponent * exponential
@@ -548,33 +548,35 @@ contains
 #endif
  
   end subroutine calc_reflectance_transmittance_sw
-  
+
+
   !---------------------------------------------------------------------
-  ! As above but with height as a vertical coordinate rather than
-  ! optical depth
-  subroutine calc_reflectance_transmittance_z_sw(ng, mu0, depth, &
-       &      gamma0, gamma1, gamma2, gamma3, gamma4, &
-       &      ref_diff, trans_diff, ref_dir, trans_dir_diff, trans_dir_dir)
+  ! Compute the shortwave reflectance and transmittance to diffuse
+  ! radiation using the Meador & Weaver formulas, as well as the
+  ! "direct" reflection and transmission, which really means the rate
+  ! of transfer of direct solar radiation (into a plane perpendicular
+  ! to the direct beam) into diffuse upward and downward streams at
+  ! the top and bottom of the layer, respectively.  Finally,
+  ! trans_dir_dir is the transmittance of the atmosphere to direct
+  ! radiation with no scattering. This version incorporates the
+  ! calculation of the gamma terms.
+  subroutine calc_ref_trans_sw(ng, mu0, od, ssa, &
+       &      asymmetry, ref_diff, trans_diff, &
+       &      ref_dir, trans_dir_diff, trans_dir_dir)
     
 #ifdef DO_DR_HOOK_TWO_STREAM
-    use yomhook, only : lhook, dr_hook
+    use yomhook, only : lhook, dr_hook, jphook
 #endif
 
+    implicit none
+    
     integer, intent(in) :: ng
 
     ! Cosine of solar zenith angle
     real(jprb), intent(in) :: mu0
 
-    ! Layer depth
-    real(jprb), intent(in) :: depth
-
-    ! The four transfer coefficients from the two-stream
-    ! differentiatial equations
-    real(jprb), intent(in), dimension(ng) :: gamma1, gamma2, gamma3, gamma4
-
-    ! An additional coefficient for direct unscattered flux "Fdir"
-    ! such that dFdir/dz = -gamma0*Fdir
-    real(jprb), intent(in), dimension(ng) :: gamma0
+    ! Optical depth and single scattering albedo
+    real(jprb), intent(in), dimension(ng) :: od, ssa, asymmetry
 
     ! The direct reflectance and transmittance, i.e. the fraction of
     ! incoming direct solar radiation incident at the top of a layer
@@ -590,98 +592,185 @@ contains
     ! Transmittance of the direct been with no scattering
     real(jprb), intent(out), dimension(ng) :: trans_dir_dir
 
-    real(jprd) :: alpha1, alpha2, k_exponent, reftrans_factor
-    real(jprd) :: exponential0 ! = exp(-od/mu0)
-    real(jprd) :: exponential  ! = exp(-k_exponent*od)
-    real(jprd) :: exponential2 ! = exp(-2*k_exponent*od)
-    real(jprd) :: k_mu0, k_gamma3, k_gamma4
-    real(jprd) :: k_2_exponential, od_over_mu0
+    ! The three transfer coefficients from the two-stream
+    ! differentiatial equations 
+#ifndef DWD_TWO_STREAM_OPTIMIZATIONS
+    real(jprb), dimension(ng) :: gamma1, gamma2, gamma3, gamma4 
+    real(jprb), dimension(ng) :: alpha1, alpha2, k_exponent
+    real(jprb), dimension(ng) :: exponential ! = exp(-k_exponent*od)
+#else
+    real(jprb) :: gamma1, gamma2, gamma3, gamma4 
+    real(jprb) :: alpha1, alpha2, k_exponent
+    real(jprb) :: exponential ! = exp(-k_exponent*od)
+#endif
+    
+    real(jprb) :: reftrans_factor, factor
+    real(jprb) :: exponential2 ! = exp(-2*k_exponent*od)
+    real(jprb) :: k_mu0, k_gamma3, k_gamma4
+    real(jprb) :: k_2_exponential, one_minus_kmu0_sqr
     integer    :: jg
 
 #ifdef DO_DR_HOOK_TWO_STREAM
-    real(jprb) :: hook_handle
+    real(jphook) :: hook_handle
 
-    if (lhook) call dr_hook('radiation_two_stream:calc_reflectance_transmittance_z_sw',0,hook_handle)
+    if (lhook) call dr_hook('radiation_two_stream:calc_ref_trans_sw',0,hook_handle)
 #endif
 
-! Added for DWD (2020)
-!NEC$ shortloop
-    do jg = 1, ng
-      od_over_mu0 = max(gamma0(jg) * depth, 0.0_jprd)
-      ! In the IFS this appears to be faster without testing the value
-      ! of od_over_mu0:
-      if (.true.) then
-!      if (od_over_mu0 > 1.0e-6_jprd) then
-        alpha1 = gamma1(jg)*gamma4(jg) + gamma2(jg)*gamma3(jg) ! Eq. 16
-        alpha2 = gamma1(jg)*gamma3(jg) + gamma2(jg)*gamma4(jg) ! Eq. 17
-        
-        ! Note that if the minimum value is reduced (e.g. to 1.0e-24)
-        ! then noise starts to appear as a function of solar zenith
-        ! angle
-        k_exponent = sqrt(max((gamma1(jg) - gamma2(jg)) * (gamma1(jg) + gamma2(jg)), &
-             &       1.0e-12_jprd)) ! Eq 18
-        k_mu0 = k_exponent*mu0
-        k_gamma3 = k_exponent*gamma3(jg)
-        k_gamma4 = k_exponent*gamma4(jg)
-        ! Check for mu0 <= 0!
-        exponential0 = exp_fast(-od_over_mu0)
-        trans_dir_dir(jg) = exponential0
-        exponential = exp_fast(-k_exponent*depth)
-        
-        exponential2 = exponential*exponential
-        k_2_exponential = 2.0_jprd * k_exponent * exponential
-        
-        if (k_mu0 == 1.0_jprd) then
-          k_mu0 = 1.0_jprd - 10.0_jprd*epsilon(1.0_jprd)
-        end if
-        
-        reftrans_factor = 1.0_jprd / (k_exponent + gamma1(jg) + (k_exponent - gamma1(jg))*exponential2)
-        
-        ! Meador & Weaver (1980) Eq. 25
-        ref_diff(jg) = gamma2(jg) * (1.0_jprd - exponential2) * reftrans_factor
-        
-        ! Meador & Weaver (1980) Eq. 26
-        trans_diff(jg) = k_2_exponential * reftrans_factor
-        
-        ! Here we need mu0 even though it wasn't in Meador and Weaver
-        ! because we are assuming the incoming direct flux is defined
-        ! to be the flux into a plane perpendicular to the direction of
-        ! the sun, not into a horizontal plane
-        reftrans_factor = mu0 * reftrans_factor / (1.0_jprd - k_mu0*k_mu0)
-        
-        ! Meador & Weaver (1980) Eq. 14, multiplying top & bottom by
-        ! exp(-k_exponent*od) in case of very high optical depths
-        ref_dir(jg) = reftrans_factor &
-             &  * ( (1.0_jprd - k_mu0) * (alpha2 + k_gamma3) &
-             &     -(1.0_jprd + k_mu0) * (alpha2 - k_gamma3)*exponential2 &
-             &     -k_2_exponential*(gamma3(jg) - alpha2*mu0)*exponential0)
-        
-        ! Meador & Weaver (1980) Eq. 15, multiplying top & bottom by
-        ! exp(-k_exponent*od), minus the 1*exp(-od/mu0) term representing direct
-        ! unscattered transmittance.  
-        trans_dir_diff(jg) = reftrans_factor * ( k_2_exponential*(gamma4(jg) + alpha1*mu0) &
-            & - exponential0 &
-            & * ( (1.0_jprd + k_mu0) * (alpha1 + k_gamma4) &
-            &    -(1.0_jprd - k_mu0) * (alpha1 - k_gamma4) * exponential2) )
+#ifndef DWD_TWO_STREAM_OPTIMIZATIONS
+    ! GCC 9.3 strange error: intermediate values of ~ -8000 cause a
+    ! FPE when vectorizing exp(), but not in non-vectorized loop, nor
+    ! with larger negative values!
+    trans_dir_dir = max(-max(od * (1.0_jprb/mu0), 0.0_jprb),-1000.0_jprb)
+    trans_dir_dir = exp(trans_dir_dir)
 
-      else
-        ! Low optical-depth limit; see equations 19, 20 and 27 from
-        ! Meador & Weaver (1980)
-        trans_diff(jg)     = 1.0_jprb - gamma1(jg) * depth
-        ref_diff(jg)       = gamma2(jg) * depth
-        trans_dir_diff(jg) = (1.0_jprb - gamma3(jg)) * depth
-        ref_dir(jg)        = gamma3(jg) * depth
-        trans_dir_dir(jg)  = 1.0_jprd - od_over_mu0
-      end if
+    do jg = 1, ng
+
+      ! Zdunkowski "PIFM" (Zdunkowski et al., 1980; Contributions to
+      ! Atmospheric Physics 53, 147-66)
+      factor = 0.75_jprb*asymmetry(jg)
+
+      gamma1(jg) = 2.0_jprb  - ssa(jg) * (1.25_jprb + factor)
+      gamma2(jg) = ssa(jg) * (0.75_jprb - factor)
+      gamma3(jg) = 0.5_jprb  - mu0*factor
+      gamma4(jg) = 1.0_jprb - gamma3(jg)
+
+      alpha1(jg) = gamma1(jg)*gamma4(jg) + gamma2(jg)*gamma3(jg) ! Eq. 16
+      alpha2(jg) = gamma1(jg)*gamma3(jg) + gamma2(jg)*gamma4(jg) ! Eq. 17
+      ! The following line crashes inexplicably with gfortran 8.5.0 in
+      ! single precision - try a later version. Note that the minimum
+      ! value is needed to produce correct results for single
+      ! scattering albedos very close to or equal to one.
+#ifdef PARKIND1_SINGLE
+      k_exponent(jg) = sqrt(max((gamma1(jg) - gamma2(jg)) * (gamma1(jg) + gamma2(jg)), &
+           &       1.0e-6_jprb)) ! Eq 18
+#else
+      k_exponent(jg) = sqrt(max((gamma1(jg) - gamma2(jg)) * (gamma1(jg) + gamma2(jg)), &
+           &       1.0e-12_jprb)) ! Eq 18
+#endif
     end do
-    
+
+    exponential = exp(-k_exponent*od)
+
+    do jg = 1, ng
+      k_mu0 = k_exponent(jg)*mu0
+      one_minus_kmu0_sqr = 1.0_jprb - k_mu0*k_mu0
+      k_gamma3 = k_exponent(jg)*gamma3(jg)
+      k_gamma4 = k_exponent(jg)*gamma4(jg)
+      exponential2 = exponential(jg)*exponential(jg)
+      k_2_exponential = 2.0_jprb * k_exponent(jg) * exponential(jg)
+      reftrans_factor = 1.0_jprb / (k_exponent(jg) + gamma1(jg) + (k_exponent(jg) - gamma1(jg))*exponential2)
+        
+      ! Meador & Weaver (1980) Eq. 25
+      ref_diff(jg) = gamma2(jg) * (1.0_jprb - exponential2) * reftrans_factor
+      !ref_diff(jg)       = max(0.0_jprb, min(ref_diff(jg)), 1.0_jprb)
+
+      ! Meador & Weaver (1980) Eq. 26, with security (which is
+      ! sometimes needed, but apparently not on ref_diff)
+      trans_diff(jg) = max(0.0_jprb, min(k_2_exponential * reftrans_factor, 1.0_jprb-ref_diff(jg)))
+
+      ! Here we need mu0 even though it wasn't in Meador and Weaver
+      ! because we are assuming the incoming direct flux is defined to
+      ! be the flux into a plane perpendicular to the direction of the
+      ! sun, not into a horizontal plane
+      reftrans_factor = mu0 * ssa(jg) * reftrans_factor &
+            &  / merge(one_minus_kmu0_sqr, epsilon(1.0_jprb), abs(one_minus_kmu0_sqr) > epsilon(1.0_jprb))
+      
+      ! Meador & Weaver (1980) Eq. 14, multiplying top & bottom by
+      ! exp(-k_exponent*od) in case of very high optical depths
+      ref_dir(jg) = reftrans_factor &
+           &  * ( (1.0_jprb - k_mu0) * (alpha2(jg) + k_gamma3) &
+           &     -(1.0_jprb + k_mu0) * (alpha2(jg) - k_gamma3)*exponential2 &
+           &     -k_2_exponential*(gamma3(jg) - alpha2(jg)*mu0)*trans_dir_dir(jg) )
+        
+      ! Meador & Weaver (1980) Eq. 15, multiplying top & bottom by
+      ! exp(-k_exponent*od), minus the 1*exp(-od/mu0) term
+      ! representing direct unscattered transmittance.
+      trans_dir_diff(jg) = reftrans_factor * ( k_2_exponential*(gamma4(jg) + alpha1(jg)*mu0) &
+           & - trans_dir_dir(jg) &
+           & * ( (1.0_jprb + k_mu0) * (alpha1(jg) + k_gamma4) &
+           &    -(1.0_jprb - k_mu0) * (alpha1(jg) - k_gamma4) * exponential2) )
+
+      ! Final check that ref_dir + trans_dir_diff <= 1
+      ref_dir(jg)        = max(0.0_jprb, min(ref_dir(jg), mu0*(1.0_jprb-trans_dir_dir(jg))))
+      trans_dir_diff(jg) = max(0.0_jprb, min(trans_dir_diff(jg), mu0*(1.0_jprb-trans_dir_dir(jg))-ref_dir(jg)))
+    end do
+
+#else
+    ! GPU-capable and vector-optimized version for ICON
+    do jg = 1, ng
+
+      trans_dir_dir(jg) = max(-max(od(jg) * (1.0_jprb/mu0),0.0_jprb),-1000.0_jprb)
+      trans_dir_dir(jg) = exp(trans_dir_dir(jg))
+
+      ! Zdunkowski "PIFM" (Zdunkowski et al., 1980; Contributions to
+      ! Atmospheric Physics 53, 147-66)
+      factor = 0.75_jprb*asymmetry(jg)
+
+      gamma1 = 2.0_jprb  - ssa(jg) * (1.25_jprb + factor)
+      gamma2 = ssa(jg) * (0.75_jprb - factor)
+      gamma3 = 0.5_jprb  - mu0*factor
+      gamma4 = 1.0_jprb - gamma3
+
+      alpha1 = gamma1*gamma4 + gamma2*gamma3 ! Eq. 16
+      alpha2 = gamma1*gamma3 + gamma2*gamma4 ! Eq. 17
+#ifdef PARKIND1_SINGLE
+      k_exponent = sqrt(max((gamma1 - gamma2) * (gamma1 + gamma2), 1.0e-6_jprb))  ! Eq 18
+#else
+      k_exponent = sqrt(max((gamma1 - gamma2) * (gamma1 + gamma2), 1.0e-12_jprb)) ! Eq 18
+#endif
+
+      exponential = exp(-k_exponent*od(jg))
+
+      k_mu0 = k_exponent*mu0
+      one_minus_kmu0_sqr = 1.0_jprb - k_mu0*k_mu0
+      k_gamma3 = k_exponent*gamma3
+      k_gamma4 = k_exponent*gamma4
+      exponential2 = exponential*exponential
+      k_2_exponential = 2.0_jprb * k_exponent * exponential
+      reftrans_factor = 1.0_jprb / (k_exponent + gamma1 + (k_exponent - gamma1)*exponential2)
+        
+      ! Meador & Weaver (1980) Eq. 25
+      ref_diff(jg) = gamma2 * (1.0_jprb - exponential2) * reftrans_factor
+        
+      ! Meador & Weaver (1980) Eq. 26
+      trans_diff(jg) = k_2_exponential * reftrans_factor
+        
+      ! Here we need mu0 even though it wasn't in Meador and Weaver
+      ! because we are assuming the incoming direct flux is defined to
+      ! be the flux into a plane perpendicular to the direction of the
+      ! sun, not into a horizontal plane
+      reftrans_factor = mu0 * ssa(jg) * reftrans_factor &
+            &  / merge(one_minus_kmu0_sqr, epsilon(1.0_jprb), abs(one_minus_kmu0_sqr) > epsilon(1.0_jprb))
+      
+      ! Meador & Weaver (1980) Eq. 14, multiplying top & bottom by
+      ! exp(-k_exponent*od) in case of very high optical depths
+      ref_dir(jg) = reftrans_factor &
+           &  * ( (1.0_jprb - k_mu0) * (alpha2 + k_gamma3) &
+           &     -(1.0_jprb + k_mu0) * (alpha2 - k_gamma3)*exponential2 &
+           &     -k_2_exponential*(gamma3 - alpha2*mu0)*trans_dir_dir(jg) )
+        
+      ! Meador & Weaver (1980) Eq. 15, multiplying top & bottom by
+      ! exp(-k_exponent*od), minus the 1*exp(-od/mu0) term
+      ! representing direct unscattered transmittance.
+      trans_dir_diff(jg) = reftrans_factor * ( k_2_exponential*(gamma4 + alpha1*mu0) &
+           & - trans_dir_dir(jg) &
+           & * ( (1.0_jprb + k_mu0) * (alpha1 + k_gamma4) &
+           &    -(1.0_jprb - k_mu0) * (alpha1 - k_gamma4) * exponential2) )
+
+      ! Final check that ref_dir + trans_dir_diff <= 1
+      ref_dir(jg)        = max(0.0_jprb, min(ref_dir(jg), mu0*(1.0_jprb-trans_dir_dir(jg))))
+      trans_dir_diff(jg) = max(0.0_jprb, min(trans_dir_diff(jg), mu0*(1.0_jprb-trans_dir_dir(jg))-ref_dir(jg)))
+
+    end do
+#endif
+
 #ifdef DO_DR_HOOK_TWO_STREAM
-    if (lhook) call dr_hook('radiation_two_stream:calc_reflectance_transmittance_z_sw',1,hook_handle)
+    if (lhook) call dr_hook('radiation_two_stream:calc_ref_trans_sw',1,hook_handle)
 #endif
  
-  end subroutine calc_reflectance_transmittance_z_sw
-  
+  end subroutine calc_ref_trans_sw
 
+  
   !---------------------------------------------------------------------
   ! Compute the fraction of shortwave transmitted diffuse radiation
   ! that is scattered during its transmission, used to compute
@@ -690,7 +779,7 @@ contains
        &      gamma1, gamma2, frac_scat_diffuse)
     
 #ifdef DO_DR_HOOK_TWO_STREAM
-    use yomhook, only : lhook, dr_hook
+    use yomhook, only : lhook, dr_hook, jphook
 #endif
 
     integer, intent(in) :: ng
@@ -713,7 +802,7 @@ contains
     integer    :: jg
 
 #ifdef DO_DR_HOOK_TWO_STREAM
-    real(jprb) :: hook_handle
+    real(jphook) :: hook_handle
 
     if (lhook) call dr_hook('radiation_two_stream:calc_frac_scattered_diffuse_sw',0,hook_handle)
 #endif
@@ -726,7 +815,7 @@ contains
       ! angle
       k_exponent = sqrt(max((gamma1(jg) - gamma2(jg)) * (gamma1(jg) + gamma2(jg)), &
            &       1.0e-12_jprd)) ! Eq 18
-      exponential = exp_fast(-k_exponent*od(jg))
+      exponential = exp(-k_exponent*od(jg))
       exponential2 = exponential*exponential
       k_2_exponential = 2.0_jprd * k_exponent * exponential
         
@@ -735,10 +824,10 @@ contains
       ! Meador & Weaver (1980) Eq. 26.
       ! Until 1.1.8, used LwDiffusivity instead of 2.0, although the
       ! effect is very small
-      !      frac_scat_diffuse(jg) = 1.0_jprb - min(1.0_jprb,exp_fast(-LwDiffusivity*od(jg)) &
+      !      frac_scat_diffuse(jg) = 1.0_jprb - min(1.0_jprb,exp(-LwDiffusivity*od(jg)) &
       !           &  / max(1.0e-8_jprb, k_2_exponential * reftrans_factor))
       frac_scat_diffuse(jg) = 1.0_jprb &
-           &  - min(1.0_jprb,exp_fast(-2.0_jprb*od(jg)) &
+           &  - min(1.0_jprb,exp(-2.0_jprb*od(jg)) &
            &  / max(1.0e-8_jprb, k_2_exponential * reftrans_factor))
     end do
     

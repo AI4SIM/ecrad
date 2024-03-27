@@ -44,10 +44,13 @@ program ecrad_driver
   use radiation_cloud,          only : cloud_type
   use radiation_aerosol,        only : aerosol_type
   use radiation_flux,           only : flux_type
-  use radiation_save,           only : save_fluxes, save_inputs
+  use radiation_save,           only : save_fluxes, save_net_fluxes, &
+       &                               save_inputs, save_sw_diagnostics
+  use radiation_general_cloud_optics, only : save_general_cloud_optics
   use ecrad_driver_config,      only : driver_config_type
   use ecrad_driver_read_input,  only : read_input
   use easy_netcdf
+  use print_matrix_mod,         only : print_matrix
 
   use mpi
   use ecrad_binding
@@ -55,6 +58,9 @@ program ecrad_driver
 
   implicit none
 
+  ! Uncomment this if you want to use the "satur" routine below
+!#include "satur.intfb.h"
+  
   ! The NetCDF file containing the input profiles
   type(netcdf_file)         :: file
 
@@ -82,6 +88,9 @@ program ecrad_driver
   ! For parallel processing of multiple blocks
   integer :: jblock, nblock ! Block loop index and number
 
+  ! Mapping matrix for shortwave spectral diagnostics
+  real(jprb), allocatable :: sw_diag_mapping(:,:)
+  
 #ifndef NO_OPENMP
   ! OpenMP functions
   integer, external :: omp_get_thread_num
@@ -225,8 +234,25 @@ program ecrad_driver
   !       &  'photosynthetically active radiation, PAR')
   !end if
 
+  ! Optionally compute shortwave spectral diagnostics in
+  ! user-specified wavlength intervals
+  if (driver_config%n_sw_diag > 0) then
+    if (.not. config%do_surface_sw_spectral_flux) then
+      stop 'Error: shortwave spectral diagnostics require do_surface_sw_spectral_flux=true'
+    end if
+    call config%get_sw_mapping(driver_config%sw_diag_wavelength_bound(1:driver_config%n_sw_diag+1), &
+         &  sw_diag_mapping, 'user-specified diagnostic intervals')
+    !if (driver_config%iverbose >= 3) then
+    !  call print_matrix(sw_diag_mapping, 'Shortwave diagnostic mapping', nulout)
+    !end if
+  end if
+  
   if (driver_config%do_save_aerosol_optics) then
     call config%aerosol_optics%save('aerosol_optics.nc', iverbose=driver_config%iverbose)
+  end if
+
+  if (driver_config%do_save_cloud_optics .and. config%use_general_cloud_optics) then
+    call save_general_cloud_optics(config, 'hydrometeor_optics', iverbose=driver_config%iverbose)
   end if
 
   ! --------------------------------------------------------
@@ -392,9 +418,19 @@ program ecrad_driver
   call set_gas_units(config, gas)
 
   ! Compute saturation with respect to liquid (needed for aerosol
-  ! hydration) call
+  ! hydration) call...
   call thermodynamics%calc_saturation_wrt_liquid(driver_config%istartcol,driver_config%iendcol)
 
+  ! ...or alternatively use the "satur" function in the IFS (requires
+  ! adding -lifs to the linker command line) but note that this
+  ! computes saturation with respect to ice at colder temperatures,
+  ! which is almost certainly incorrect
+  !allocate(thermodynamics%h2o_sat_liq(ncol,nlev))
+  !call satur(driver_config%istartcol, driver_config%iendcol, ncol, 1, nlev, .false., &
+  !     0.5_jprb * (thermodynamics.pressure_hl(:,1:nlev)+thermodynamics.pressure_hl(:,2:nlev)), &
+  !     0.5_jprb * (thermodynamics.temperature_hl(:,1:nlev)+thermodynamics.temperature_hl(:,2:nlev)), &
+  !     thermodynamics%h2o_sat_liq, 2)
+  
   ! Check inputs are within physical bounds, printing message if not
   is_out_of_bounds =     gas%out_of_physical_bounds(driver_config%istartcol, driver_config%iendcol, &
        &                                            driver_config%do_correct_unphysical_inputs) &
@@ -517,8 +553,8 @@ program ecrad_driver
     end if
 
 #ifndef NO_OPENMP
-    tstop = omp_get_wtime()
-    write(nulout, '(a,g11.5,a)') 'Time elapsed in radiative transfer: ', tstop-tstart, ' seconds'
+  tstop = omp_get_wtime()
+  write(nulout, '(a,g12.5,a)') 'Time elapsed in radiative transfer: ', tstop-tstart, ' seconds'
 #endif
 
     ! --------------------------------------------------------
@@ -535,10 +571,28 @@ program ecrad_driver
             &trim(adjustl(rank_string))//file_name(extension_index:len(file_name))
 
     ! Store the fluxes in the output file
-    call save_fluxes(output_file_name, config, thermodynamics, flux, &
-         &   iverbose=driver_config%iverbose, is_hdf5_file=driver_config%do_write_hdf5, &
-         &   experiment_name=driver_config%experiment_name, &
-         &   is_double_precision=driver_config%do_write_double_precision)
+    if (.not. driver_config%do_save_net_fluxes) then
+      call save_fluxes(output_file_name, config, thermodynamics, flux, &
+            &   iverbose=driver_config%iverbose, is_hdf5_file=driver_config%do_write_hdf5, &
+            &   experiment_name=driver_config%experiment_name, &
+            &   is_double_precision=driver_config%do_write_double_precision)
+    else
+      call save_net_fluxes(output_file_name, config, thermodynamics, flux, &
+            &   iverbose=driver_config%iverbose, is_hdf5_file=driver_config%do_write_hdf5, &
+            &   experiment_name=driver_config%experiment_name, &
+            &   is_double_precision=driver_config%do_write_double_precision)
+    end if
+  
+    if (driver_config%n_sw_diag > 0) then
+      ! Store spectral fluxes in user-defined intervals in a second
+      ! output file
+      call save_sw_diagnostics(driver_config%sw_diag_file_name, config, &
+            &  driver_config%sw_diag_wavelength_bound(1:driver_config%n_sw_diag+1), &
+            &  sw_diag_mapping, flux, iverbose=driver_config%iverbose, &
+            &  is_hdf5_file=driver_config%do_write_hdf5, &
+            &  experiment_name=driver_config%experiment_name, &
+            &  is_double_precision=driver_config%do_write_double_precision)
+    end if
 
     if (driver_config%iverbose >= 2) then
       write(nulout,'(a)') '------------------------------------------------------------------------------------'

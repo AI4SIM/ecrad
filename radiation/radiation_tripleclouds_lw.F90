@@ -42,7 +42,7 @@ contains
        &  flux)
 
     use parkind1, only           : jprb
-    use yomhook,  only           : lhook, dr_hook
+    use yomhook,  only           : lhook, dr_hook, jphook
 
 !    use radiation_io, only             : nulout
     use radiation_config, only         : config_type, IPdfShapeGamma
@@ -51,8 +51,7 @@ contains
     use radiation_overlap, only        : calc_overlap_matrices
     use radiation_flux, only           : flux_type, indexed_sum
     use radiation_matrix, only         : singlemat_x_vec
-    use radiation_two_stream, only     : calc_two_stream_gammas_lw, &
-         &                               calc_reflectance_transmittance_lw, &
+    use radiation_two_stream, only     : calc_ref_trans_lw, &
          &                               calc_no_scattering_transmittance_lw
     use radiation_adding_ica_lw, only  : adding_ica_lw, calc_fluxes_no_scattering_lw
     use radiation_lw_derivatives, only : calc_lw_derivatives_region
@@ -122,9 +121,6 @@ contains
     real(jprb), dimension(nregions,nregions,nlev+1, &
          &                istartcol:iendcol) :: u_matrix, v_matrix
 
-    ! Two-stream variables
-    real(jprb), dimension(config%n_g_lw) :: gamma1, gamma2
-
     ! Diffuse reflection and transmission matrices of each layer
     real(jprb), dimension(config%n_g_lw, nregions, nlev) :: reflectance, transmittance
 
@@ -173,12 +169,15 @@ contains
     ! and below the ground, both treated as single-region clear skies
     logical :: is_clear_sky_layer(0:nlev+1)
 
+    ! Temporaries to speed up summations
+    real(jprb) :: sum_dn, sum_up
+    
     ! Index of the highest cloudy layer
     integer :: i_cloud_top
 
     integer :: jcol, jlev, jg, jreg, jreg2, ng
 
-    real(jprb) :: hook_handle
+    real(jphook) :: hook_handle
 
     if (lhook) call dr_hook('radiation_tripleclouds_lw:solver_tripleclouds_lw',0,hook_handle)
 
@@ -234,16 +233,15 @@ contains
       ! --------------------------------------------------------
 
       if (.not. config%do_lw_aerosol_scattering) then
-        ! No scattering in clear-sky flux calculation
-        do jlev = 1,nlev
-          ! Array-wise assignments
-          gamma1 = 0.0_jprb
-          gamma2 = 0.0_jprb
-          call calc_no_scattering_transmittance_lw(ng, od(:,jlev,jcol), &
-               &  planck_hl(:,jlev,jcol), planck_hl(:,jlev+1, jcol), &
-               &  trans_clear(:,jlev), source_up_clear(:,jlev), source_dn_clear(:,jlev))
-          ref_clear(:,jlev) = 0.0_jprb
-        end do
+        ! No scattering in clear-sky flux calculation; note that here
+        ! the first two dimensions of the input arrays are unpacked
+        ! into vectors inside the routine        
+        call calc_no_scattering_transmittance_lw(ng*nlev, od(:,:,jcol), &
+             &  planck_hl(:,1:nlev,jcol), planck_hl(:,2:nlev+1, jcol), &
+             &  trans_clear, source_up_clear, source_dn_clear)
+        ! Ensure that clear-sky reflectance is zero since it may be
+        ! used in cloudy-sky case
+        ref_clear = 0.0_jprb
         ! Simple down-then-up method to compute fluxes
         call calc_fluxes_no_scattering_lw(ng, nlev, &
              &  trans_clear, source_up_clear, source_dn_clear, &
@@ -251,18 +249,11 @@ contains
              &  flux_up_clear, flux_dn_clear)
       else
         ! Scattering in clear-sky flux calculation
-        do jlev = 1,nlev
-          ! Array-wise assignments
-          gamma1 = 0.0_jprb
-          gamma2 = 0.0_jprb
-          call calc_two_stream_gammas_lw(ng, &
-               &  ssa(:,jlev,jcol), g(:,jlev,jcol), gamma1, gamma2)
-          call calc_reflectance_transmittance_lw(ng, &
-               &  od(:,jlev,jcol), gamma1, gamma2, &
-               &  planck_hl(:,jlev,jcol), planck_hl(:,jlev+1,jcol), &
-               &  ref_clear(:,jlev), trans_clear(:,jlev), &
-               &  source_up_clear(:,jlev), source_dn_clear(:,jlev))
-        end do
+        call calc_ref_trans_lw(ng*nlev, &
+             &  od(:,:,jcol), ssa(:,:,jcol), g(:,:,jcol), &
+             &  planck_hl(:,1:nlev,jcol), planck_hl(:,2:nlev+1,jcol), &
+             &  ref_clear, trans_clear, &
+             &  source_up_clear, source_dn_clear)
         ! Use adding method to compute fluxes
         call adding_ica_lw(ng, nlev, &
              &  ref_clear, trans_clear, source_up_clear, source_dn_clear, &
@@ -272,10 +263,23 @@ contains
 
       if (config%do_clear) then
         ! Sum over g-points to compute broadband fluxes
-        flux%lw_up_clear(jcol,:) = sum(flux_up_clear,1)
-        flux%lw_dn_clear(jcol,:) = sum(flux_dn_clear,1)
-        ! Store surface spectral downwelling fluxes
-        flux%lw_dn_surf_clear_g(:,jcol) = flux_dn_clear(:,nlev+1)
+        do jlev = 1,nlev+1
+          sum_up = 0.0_jprb
+          sum_dn = 0.0_jprb
+          !$omp simd reduction(+:sum_up, sum_dn)
+          do jg = 1,ng
+            sum_up = sum_up + flux_up_clear(jg,jlev)
+            sum_dn = sum_dn + flux_dn_clear(jg,jlev)
+          end do
+          flux%lw_up_clear(jcol,jlev) = sum_up
+          flux%lw_dn_clear(jcol,jlev) = sum_dn
+        end do
+
+        ! Store surface spectral downwelling fluxes / TOA upwelling
+        do jg = 1,ng
+          flux%lw_dn_surf_clear_g(jg,jcol) = flux_dn_clear(jg,nlev+1)
+          flux%lw_up_toa_clear_g (jg,jcol) = flux_up_clear(jg,1)
+        end do
         ! Save the spectral fluxes if required
         if (config%do_save_spectral_flux) then
           do jlev = 1,nlev+1
@@ -305,10 +309,6 @@ contains
       end if
 
       do jlev = i_cloud_top,nlev ! Start at cloud top and work down
-
-        ! Array-wise assignments
-        gamma1 = 0.0_jprb
-        gamma2 = 0.0_jprb
 
         ! Copy over clear-sky properties
         reflectance(:,1,jlev)    = ref_clear(:,jlev)
@@ -357,10 +357,8 @@ contains
                        &     *  od_cloud_new / (ssa_total*od_total)
                 end where
               end if
-              call calc_two_stream_gammas_lw(ng, &
-                   &  ssa_total, g_total, gamma1, gamma2)
-              call calc_reflectance_transmittance_lw(ng, &
-                   &  od_total, gamma1, gamma2, &
+              call calc_ref_trans_lw(ng, &
+                   &  od_total, ssa_total, g_total, &
                    &  planck_hl(:,jlev,jcol), planck_hl(:,jlev+1,jcol), &
                    &  reflectance(:,jreg,jlev), transmittance(:,jreg,jlev), &
                    &  source_up(:,jreg,jlev), source_dn(:,jreg,jlev))
@@ -469,7 +467,12 @@ contains
             flux%lw_dn_band(:,jcol,jlev) = flux%lw_dn_clear_band(:,jcol,jlev)
           end if
         else
-          flux%lw_dn(jcol,:) = sum(flux_dn_clear(:,jlev))
+          sum_dn = 0.0_jprb
+          !$omp simd reduction(+:sum_dn)
+          do jg = 1,ng
+            sum_dn = sum_dn + flux_dn_clear(jg,jlev)
+          end do
+          flux%lw_dn(jcol,jlev) = sum_dn
           if (config%do_save_spectral_flux) then
             call indexed_sum(flux_dn_clear(:,jlev), &
                  &           config%i_spec_from_reordered_g_lw, &
@@ -486,7 +489,14 @@ contains
       flux_up(:,1) = total_source(:,1,i_cloud_top) &
            &  + total_albedo(:,1,i_cloud_top)*flux_dn_clear(:,i_cloud_top)
       flux_up(:,2:) = 0.0_jprb
-      flux%lw_up(jcol,i_cloud_top) = sum(flux_up(:,1))
+
+      sum_up = 0.0_jprb
+      !$omp simd reduction(+:sum_up)
+      do jg = 1,ng
+        sum_up = sum_up + flux_up(jg,1)
+      end do
+      flux%lw_up(jcol,i_cloud_top) = sum_up
+
       if (config%do_save_spectral_flux) then
         call indexed_sum(flux_up(:,1), &
              &           config%i_spec_from_reordered_g_lw, &
@@ -494,13 +504,19 @@ contains
       end if
       do jlev = i_cloud_top-1,1,-1
         flux_up(:,1) = trans_clear(:,jlev)*flux_up(:,1) + source_up_clear(:,jlev)
-        flux%lw_up(jcol,jlev) = sum(flux_up(:,1))
+        sum_up = 0.0_jprb
+        !$omp simd reduction(+:sum_up)
+        do jg = 1,ng
+          sum_up = sum_up + flux_up(jg,1)
+        end do
+        flux%lw_up(jcol,jlev) = sum_up
         if (config%do_save_spectral_flux) then
           call indexed_sum(flux_up(:,1), &
                &           config%i_spec_from_reordered_g_lw, &
                &           flux%lw_up_band(:,jcol,jlev))
         end if
       end do
+      flux%lw_up_toa_g(:,jcol) = sum(flux_up,2)
 
       ! --------------------------------------------------------
       ! Section 8: Compute fluxes down to surface
@@ -543,8 +559,17 @@ contains
                ! nothing to do
 
         ! Store the broadband fluxes
-        flux%lw_up(jcol,jlev+1) = sum(sum(flux_up,1))
-        flux%lw_dn(jcol,jlev+1) = sum(sum(flux_dn,1))
+        sum_up = 0.0_jprb
+        sum_dn = 0.0_jprb
+        do jreg = 1,nregions
+          !$omp simd reduction(+:sum_up, sum_dn)
+          do jg = 1,ng
+            sum_up = sum_up + flux_up(jg,jreg)
+            sum_dn = sum_dn + flux_dn(jg,jreg)
+          end do
+        end do
+        flux%lw_up(jcol,jlev+1) = sum_up
+        flux%lw_dn(jcol,jlev+1) = sum_dn
 
         ! Save the spectral fluxes if required
         if (config%do_save_spectral_flux) then
@@ -572,7 +597,7 @@ contains
         call calc_lw_derivatives_region(ng, nlev, nregions, jcol, transmittance, &
              &  u_matrix(:,:,:,jcol), sum(flux_up,2), flux%lw_derivatives)
       end if
-
+      
     end do ! Loop over columns
 
     if (lhook) call dr_hook('radiation_tripleclouds_lw:solver_tripleclouds_lw',1,hook_handle)
